@@ -1,0 +1,19 @@
+{
+  "name": "chirp-status",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "bun test",
+    "licences": "bun scripts/check-licences.ts",
+    "build": "bunx wrangler@4.151.1 deploy --dry-run --outdir dist",
+    "dev": "bunx wrangler@4.151.1 dev",
+    "deploy": "bunx wrangler@4.151.1 deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261016.1",
+    "@types/bun": "1.4.3",
+    "typescript": "7.0.2"
+  }
+}

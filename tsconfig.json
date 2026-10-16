@@ -1,0 +1,19 @@
+{
+  // The Worker: Cloudflare's runtime types only. Tests and scripts run under
+  // Bun and are checked by tsconfig.test.json, since the two runtimes declare
+  // the same globals differently.
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2024"],
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
