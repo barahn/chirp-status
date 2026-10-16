@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Fabrintek Engenharia Digital Ltda
+{
+  "$schema": "https://unpkg.com/wrangler@4.151.1/config-schema.json",
+  "name": "chirp-status",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "status.usechirp.app", "custom_domain": true }],
+  "durable_objects": {
+    "bindings": [{ "name": "STATUS", "class_name": "StatusMonitor" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StatusMonitor"] }],
+  // A watchdog only; the rounds run on the object's own 30 s alarm.
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "REGISTRY_URL": "https://raw.githubusercontent.com/barahn/chirp/main/network/servers.json",
+    "VANTAGE": "Cloudflare",
+    "ALLOW_ORIGIN": "https://usechirp.app"
+  },
+  "observability": { "enabled": true },
+  // No telemetry from the tool that deploys a monitor of someone else's servers.
+  "send_metrics": false
+}
