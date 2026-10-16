@@ -1,0 +1,67 @@
+name: Deploy
+
+# A merge to main is deployed to status.usechirp.app once a maintainer
+# approves the run in the production environment. The token lives there, as
+# an environment secret, so no workflow that does not name the environment
+# can read it.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# One deployment at a time, and never cut one off halfway.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to status.usechirp.app
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://status.usechirp.app/v1/servers
+    steps:
+      - uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        continue-on-error: true
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Install and test
+        run: |
+          bun install --frozen-lockfile
+          bun test
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning title=Not deployed::The production environment has no CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID yet. See README.md, Deploying."
+            echo "DEPLOYED=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          bun run deploy
+
+      - name: Check it answers
+        if: env.DEPLOYED != 'false'
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 10 https://status.usechirp.app/healthz; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::status.usechirp.app does not answer /healthz after the deployment"
+          exit 1
