@@ -16,7 +16,9 @@
   "vars": {
     "REGISTRY_URL": "https://raw.githubusercontent.com/barahn/chirp/main/network/servers.json",
     "VANTAGE": "Cloudflare",
-    "ALLOW_ORIGIN": "https://usechirp.app"
+    "ALLOW_ORIGIN": "https://usechirp.app",
+    // The status page is Chirp's, published there; the Worker serves it at /.
+    "SITE_ORIGIN": "https://usechirp.app"
   },
   "observability": { "enabled": true },
   // No telemetry from the tool that deploys a monitor of someone else's servers.
