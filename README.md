@@ -1,8 +1,8 @@
 # chirp-status
 
 Measures the servers of [Chirp](https://github.com/barahn/chirp)'s public
-network from outside, and serves the figures
-[usechirp.app/status](https://usechirp.app/status/) shows: whether each server
+network from outside, and serves the figures and the page that shows them at
+[status.usechirp.app](https://status.usechirp.app): whether each server
 is up now, since when it has been off-line, and how much of each day it
 answered.
 
@@ -10,6 +10,12 @@ It is a Cloudflare Worker and one Durable Object. The Durable Object probes
 every server each 30 seconds, keeps the probes in its SQLite storage for 90 days
 and each day's totals for good, and the Worker serves them at
 `https://status.usechirp.app`.
+
+The page itself is Chirp's, written and published with the rest of
+`usechirp.app`. The Worker fetches it from `SITE_ORIGIN` at run time and serves
+it at `/` with its assets, pointing the site's other links back at the site.
+`usechirp.app/status/` keeps working; `status.usechirp.app/status/` redirects
+to `/`.
 
 ## Every figure is measured, never claimed
 
@@ -50,6 +56,7 @@ by the monitor's clock rather than the visitor's.
 | `GET /v1/servers` | Every server's status now. |
 | `GET /v1/servers/{id}/history?days=N` | One server's days, oldest first, `N` from 1 to 90 (default 90), one entry per day whether it has data or not. |
 | `GET /healthz` | `200 ok` while the Worker serves. |
+| `GET /` | The status page, from `usechirp.app/status/`. |
 
 `/v1/servers`:
 
