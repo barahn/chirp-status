@@ -1,0 +1,14 @@
+{
+  "servers": [
+    {
+      "id": "pve-dc-01",
+      "kind": "node",
+      "url": "https://relay.usechirp.app",
+      "operator": "Fabrintek",
+      "github": "mendsec",
+      "region": "BR",
+      "behind_cdn": false,
+      "added": "2026-10-15"
+    }
+  ]
+}

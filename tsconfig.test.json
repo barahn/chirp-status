@@ -1,0 +1,11 @@
+{
+  // Tests and scripts, under Bun. They import every module but worker.ts,
+  // which only the Worker's runtime can load.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom"],
+    "types": ["bun"]
+  },
+  "include": ["test", "scripts", "src"],
+  "exclude": ["src/worker.ts"]
+}
