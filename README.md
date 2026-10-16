@@ -24,6 +24,14 @@ and each day's totals for good, and the Worker serves them at
 - **Off-line** is three failed probes in a row. A server nobody has probed for
   three rounds is **unknown**, not shown as it last was.
 
+**What a Worker cannot measure.** A Worker's `fetch` reuses connections and
+does not say why one failed. So the latency shown is what a probe took as the
+Worker made it, usually over a connection already open, not a fresh TLS
+handshake; and a failure is `timeout`, `status` (any answer but `200`, a
+redirect included) or `other`, never which of DNS, the connection or TLS gave
+out. The probes come from the one place the Durable Object lives, which is
+the vantage point.
+
 The definitions, and why the network is shaped as it is, are in Chirp's
 [`docs/status-page-proposal.md`](https://github.com/barahn/chirp/blob/main/docs/status-page-proposal.md).
 The list of servers is Chirp's
@@ -55,7 +63,7 @@ by the monitor's clock rather than the visitor's.
       "id": "pve-dc-01", "kind": "node", "url": "https://relay.usechirp.app",
       "operator": "Fabrintek", "region": "BR", "behind_cdn": false,
       "added": "2026-10-15", "new": true, "listing": "active",
-      "state": "up", "last_checked": "2026-10-16T13:44:58.000Z", "last_error": "",
+      "state": "up", "last_checked": "2026-10-16T13:44:58.000Z",
       "latency_ms": 42, "last_ok": "2026-10-16T13:44:58.000Z",
       "uptime": {
         "24h": { "up_minutes": 1440, "observed_minutes": 1440, "percent": 100 },
@@ -67,8 +75,9 @@ by the monitor's clock rather than the visitor's.
 }
 ```
 
-`state` is `up`, `failing`, `offline` or `unknown`. `last_error` is `timeout`,
-`status` or `other`. `percent` is `null` when no minute was observed.
+`state` is `up`, `failing`, `offline` or `unknown`. `last_error`, when the
+latest probe failed, is `timeout`, `status` or `other`; it is absent when that
+probe succeeded. `percent` is `null` when no minute was observed.
 
 ## Developing
 
@@ -78,12 +87,36 @@ Everything runs on [Bun](https://bun.sh).
 bun install
 bun test
 bun run typecheck
-bunx wrangler dev
+bun run build
 ```
 
 The figures are worked out in plain TypeScript modules (`src/`), tested with
 `bun test` against Bun's own SQLite, which speaks the same SQL as a Durable
-Object's storage. The Durable Object and the Worker are thin layers over them.
+Object's storage. The Durable Object and the Worker (`src/worker.ts`) are thin
+layers over them. `bun run build` is `wrangler deploy --dry-run`: the Worker
+exactly as it would be deployed, in `dist/`.
+
+wrangler is run with `bunx` at a pinned version rather than installed: its
+dependencies include sharp's LGPL libvips, and nothing copyleft is installed
+here (`bun run licences`). `wrangler dev` does not run under Bun: its dev
+server's control channel to workerd drops, and requests hang. To run the built
+Worker in workerd, use Miniflare from a directory of its own, outside this
+project.
+
+## Deploying
+
+A merge to `main` runs `.github/workflows/deploy.yml`, which waits for a
+maintainer to approve it in the `production` environment, then runs
+`wrangler deploy` and checks `https://status.usechirp.app/healthz` answers.
+
+The environment holds two secrets:
+
+- `CLOUDFLARE_ACCOUNT_ID`: the account that owns `usechirp.app`.
+- `CLOUDFLARE_API_TOKEN`: a token with **Account · Workers Scripts · Edit** on
+  that account, and **Zone · Workers Routes · Edit** and **Zone · DNS · Edit**
+  on `usechirp.app`, which the custom domain `status.usechirp.app` needs.
+
+Until both are set, the workflow says so and deploys nothing.
 
 ## Licence
 
