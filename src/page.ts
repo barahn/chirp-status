@@ -27,3 +27,42 @@ export function rewriteHref(href: string, siteOrigin: string): string {
   if (href === "/favicon.svg" || href.startsWith("/favicon.svg?") || href.startsWith("/assets/")) return href;
   return siteOrigin.replace(/\/+$/, "") + href;
 }
+
+/** The site's response headers the page is served with. Its security headers
+ * come from Cloudflare rules scoped to the site's own host, so they are
+ * carried over for the page to keep them here. */
+const KEPT_HEADERS = [
+  "Content-Type", "Cache-Control", "ETag", "Last-Modified",
+  "Content-Security-Policy", "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy",
+  "Referrer-Policy", "Permissions-Policy", "X-Frame-Options", "Strict-Transport-Security",
+];
+
+/** The page, or one of its assets, as the site publishes it at path. */
+export async function servePage(
+  request: Request,
+  siteOrigin: string,
+  path: string,
+  fetcher: (url: string, init: RequestInit) => Promise<Response>,
+): Promise<Response> {
+  const site = siteOrigin.replace(/\/+$/, "");
+  const upstream = await fetcher(site + path + new URL(request.url).search, {
+    method: request.method,
+    headers: { Accept: request.headers.get("Accept") ?? "*/*" },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const headers = new Headers();
+  for (const name of KEPT_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  headers.set("X-Content-Type-Options", "nosniff");
+  const response = new Response(upstream.body, { status: upstream.status, headers });
+  if (!(headers.get("Content-Type") ?? "").startsWith("text/html")) return response;
+  return new HTMLRewriter()
+    .on("a[href]", {
+      element(el) {
+        el.setAttribute("href", rewriteHref(el.getAttribute("href")!, site));
+      },
+    })
+    .transform(response);
+}

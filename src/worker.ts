@@ -9,7 +9,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { MAX_HISTORY_DAYS, Monitor, type DayStatus, type Snapshot } from "./monitor";
-import { rewriteHref, upstreamPath } from "./page";
+import { servePage, upstreamPath } from "./page";
 import { parseServers, type Server } from "./registry";
 import { Store, type Sql } from "./store";
 import { INTERVAL_MS } from "./uptime";
@@ -24,32 +24,6 @@ export interface Env {
   ALLOW_ORIGIN: string;
   /** The site the status page is published on, served from here at /. */
   SITE_ORIGIN: string;
-}
-
-/** The page at /, and its assets, as the site publishes them. */
-async function servePage(request: Request, env: Env, path: string): Promise<Response> {
-  const site = (env.SITE_ORIGIN || "https://usechirp.app").replace(/\/+$/, "");
-  const url = new URL(request.url);
-  const upstream = await fetch(site + path + url.search, {
-    method: request.method,
-    headers: { Accept: request.headers.get("Accept") ?? "*/*" },
-    signal: AbortSignal.timeout(10_000),
-  });
-  const headers = new Headers();
-  for (const name of ["Content-Type", "Cache-Control", "ETag", "Last-Modified", "Referrer-Policy", "Permissions-Policy", "X-Frame-Options"]) {
-    const value = upstream.headers.get(name);
-    if (value !== null) headers.set(name, value);
-  }
-  headers.set("X-Content-Type-Options", "nosniff");
-  const response = new Response(upstream.body, { status: upstream.status, headers });
-  if (!(headers.get("Content-Type") ?? "").startsWith("text/html")) return response;
-  return new HTMLRewriter()
-    .on("a[href]", {
-      element(el) {
-        el.setAttribute("href", rewriteHref(el.getAttribute("href")!, site));
-      },
-    })
-    .transform(response);
 }
 
 /** How long a fetched registry is used before it is fetched again. */
@@ -152,7 +126,7 @@ export default {
     const page = upstreamPath(url.pathname);
     if (page !== null) {
       try {
-        return await servePage(request, env, page);
+        return await servePage(request, env.SITE_ORIGIN || "https://usechirp.app", page, (u, i) => fetch(u, i));
       } catch (e) {
         console.error(`chirp-status: page: ${(e as Error).message}`);
         return text("the status page could not be loaded; the figures are at /v1/servers", 502);
