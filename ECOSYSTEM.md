@@ -16,10 +16,10 @@ change that looks right from one side is often the arrow pointing the wrong way.
 |---|---|---|
 | [remotekit](https://github.com/barahn/remotekit) | Apache-2.0 | The mechanism. Screen capture and VP8 encoding, input injection, clipboard, chunked file transfer, a WebRTC wrapper, a reverse tunnel, tray and OS-service installation. |
 | [chirp](https://github.com/barahn/chirp) | AGPL-3.0-only | On-demand remote support. One binary, the same on both sides, with nothing to install and no account: it shows its own code and share link; whoever types someone's code controls that machine once its owner consents there. |
-| [chirp-status](https://github.com/barahn/chirp-status) | AGPL-3.0-only | The monitor of Chirp's public network: a Cloudflare Worker that probes the servers Chirp lists and serves the figures `usechirp.app/status` shows. |
+| [chirp-status](https://github.com/barahn/chirp-status) | AGPL-3.0-only | A hosted monitor of Chirp's public network: a Cloudflare Worker that probes the servers Chirp lists and serves the figures `status.usechirp.app` shows. Chirp keeps its own monitor, `cmd/chirp-status`, which anyone can run. |
 | barahn (private) | Proprietary | Fabrintek's commercial platform: fleet management over standing agents, with tenancy, roles and persistence. |
 
-**This repository is chirp-status** — the monitor of Chirp's public network.
+**This repository is chirp-status** — the hosted monitor of Chirp's public network.
 
 ## Dependencies point inwards only
 
@@ -41,8 +41,8 @@ change that looks right from one side is often the arrow pointing the wrong way.
 A change that needs one of those arrows reversed is a design problem, not a
 licensing exception. There is no approval that makes it acceptable, because the
 constraint is not a policy — reversing an arrow either breaks a licence or
-breaks the dual-licensing arrangement described in
-[LICENSING.md](LICENSING.md).
+breaks the dual-licensing arrangement described in Chirp's
+[LICENSING.md](https://github.com/barahn/chirp/blob/main/LICENSING.md).
 
 ## Why each licence is the one it is
 
@@ -55,14 +55,14 @@ reach it.
 **Chirp is AGPL** because it is network-delivered software, and the AGPL is what
 stops a hosted fork from taking the code without returning changes.
 
-**chirp-status is AGPL** for the reasons Chirp is, and because its figures are
-only as believable as its code is open: anyone can read how a number is made,
-and run the same monitor to check it.
+**chirp-status is AGPL** for the reasons Chirp is, and because a monitor's
+figures are only as believable as its code is open: anyone can read how a
+number is made, and run a monitor of their own to check it.
 
 **The platform is proprietary**, and Fabrintek's ability to keep it that way
 while using Chirp rests on Fabrintek owning all of Chirp — which is why Chirp
-requires a CLA and why its contributions are currently closed. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+requires a CLA and why its contributions are currently closed. See Chirp's
+[CONTRIBUTING.md](https://github.com/barahn/chirp/blob/main/CONTRIBUTING.md).
 
 ## Where does this change belong?
 
@@ -81,10 +81,12 @@ may do and for how long, what the join page shows. Chirp's own commitments
 constrain this — no feature gates, consent that cannot be bypassed, and
 self-hosting with no restrictions.
 
-**It belongs in chirp-status** if it is how the public network is measured:
-the probes, what counts as up, how history is kept, the API the status page
-reads. Who is in the network, and the rules for joining it, are Chirp's: they
-are product policy, decided by pull request to Chirp.
+**It belongs in chirp-status** if it is how the hosted monitor runs on
+Cloudflare: its Worker, its Durable Object, and what the platform's limits ask
+of them. How a figure is made, who is in the network and the rules for joining
+it are Chirp's ([docs/status-page-proposal.md](https://github.com/barahn/chirp/blob/main/docs/status-page-proposal.md)):
+Chirp's own monitor and chirp-status make each figure the same way, so a change
+to how one is made goes into both.
 
 **It belongs in the platform** if it presumes accounts, tenants, roles, fleets
 or standing agents. Chirp has none of those and is not the place to introduce
@@ -99,7 +101,7 @@ failed guesses and relaying the two peers' signalling would serve Barahn as well
 as Chirp — so that is remotekit's. That each Chirp shows its code at start, that
 the one who types it controls, how long a link lives, the limits, and the
 consent prompt's wording are Chirp's. The full split is proposed in
-[docs/rendezvous-proposal.md](docs/rendezvous-proposal.md).
+Chirp's [docs/rendezvous-proposal.md](https://github.com/barahn/chirp/blob/main/docs/rendezvous-proposal.md).
 
 ## What this repository must not acquire
 
@@ -108,8 +110,8 @@ consent prompt's wording are Chirp's. The full split is proposed in
   more crosses.
 - A runtime dependency. The Worker is its own code and nothing else, so what
   it measures is what this repository says.
-- The network's policy: who may join, the thresholds a node must meet, the
-  list itself. Those are Chirp's.
+- A rule of the network, or a definition of a figure, of its own. Those are
+  Chirp's, and Chirp's own monitor follows the same ones.
 - A copyleft dependency, even for development, for the reason Chirp has none:
   Fabrintek owns all of chirp-status, and owns none of its dependencies.
 
