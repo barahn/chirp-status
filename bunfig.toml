@@ -1,0 +1,4 @@
+# The tests are in test/ and nowhere else, whatever else the working
+# directory holds.
+[test]
+root = "./test"

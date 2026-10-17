@@ -58,7 +58,13 @@ export class StatusMonitor extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     // The next round is set first: a round that throws still has a successor.
     await this.ctx.storage.setAlarm(Date.now() + INTERVAL_MS);
-    await this.monitor.round(await this.servers());
+    try {
+      await this.monitor.round(await this.servers());
+    } catch (e) {
+      // Logged, not rethrown: a rethrown error makes the runtime retry the
+      // alarm on its own schedule, on top of the next one already set.
+      console.error(`chirp-status: round: ${(e as Error)?.stack ?? String(e)}`);
+    }
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -133,10 +139,28 @@ export default {
       }
     }
 
-    const stub = env.STATUS.getByName("monitor");
-    ctx.waitUntil(stub.ensureRunning());
+    // Everything below asks the Durable Object. If it fails, say so plainly
+    // and log why, rather than letting the runtime answer with a bare 1101:
+    // the page reads a 503 as "the monitor is not answering".
+    const failed = (what: string, e: unknown) => {
+      console.error(`chirp-status: ${what}: ${(e as Error)?.stack ?? String(e)}`);
+      return text("the monitor is not answering", 503);
+    };
+    let stub: DurableObjectStub<StatusMonitor>;
+    try {
+      stub = env.STATUS.getByName("monitor");
+      ctx.waitUntil(stub.ensureRunning().catch((e) => console.error(`chirp-status: ensureRunning: ${(e as Error)?.stack ?? String(e)}`)));
+    } catch (e) {
+      return failed("reaching the monitor", e);
+    }
 
-    if (url.pathname === "/v1/servers") return json(await stub.snapshot());
+    if (url.pathname === "/v1/servers") {
+      try {
+        return json(await stub.snapshot());
+      } catch (e) {
+        return failed("snapshot", e);
+      }
+    }
 
     const m = /^\/v1\/servers\/([a-z0-9-]{1,40})\/history$/.exec(url.pathname);
     if (m) {
@@ -145,7 +169,12 @@ export default {
       if (!/^\d+$/.test(raw ?? "90") || days < 1 || days > MAX_HISTORY_DAYS) {
         return text(`days must be 1 to ${MAX_HISTORY_DAYS}`, 400);
       }
-      const history = await stub.history(m[1]!, days);
+      let history: DayStatus[] | null;
+      try {
+        history = await stub.history(m[1]!, days);
+      } catch (e) {
+        return failed("history", e);
+      }
       if (history === null) return text("no such server", 404);
       return json({ id: m[1], days: history });
     }
