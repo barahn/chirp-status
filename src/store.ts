@@ -40,6 +40,12 @@ const SCHEMA = [
     server_id TEXT    PRIMARY KEY,
     ts        INTEGER NOT NULL
   )`,
+  // The last day whose total is in daily, so a day's close reads only the
+  // days not closed yet rather than every probe kept.
+  `CREATE TABLE IF NOT EXISTS rolled (
+    server_id TEXT    PRIMARY KEY,
+    day       INTEGER NOT NULL
+  )`,
 ];
 
 /** A UTC day, counted from 1970-01-01. */
@@ -75,7 +81,9 @@ export class Store {
     for (const s of SCHEMA) sql.exec(s);
   }
 
-  /** Records samples of the server with id. */
+  /** Records samples of the server with id: one row each, nothing else.
+   * When it last answered is kept apart, by saveLastOK, since writing it on
+   * every probe would double what a day writes. */
   add(id: string, ...samples: Sample[]): void {
     this.sql.transaction(() => {
       for (const s of samples) {
@@ -83,15 +91,22 @@ export class Store {
           `INSERT INTO probes (server_id, vantage, ts, ok, latency_ms, err_class) VALUES (?, ?, ?, ?, ?, ?)`,
           id, s.vantage, s.at, s.ok ? 1 : 0, Math.round(s.latencyMs), s.err,
         );
-        if (s.ok) {
-          this.sql.exec(
-            `INSERT INTO last_ok (server_id, ts) VALUES (?, ?)
-             ON CONFLICT (server_id) DO UPDATE SET ts = max(ts, excluded.ts)`,
-            id, s.at,
-          );
-        }
       }
     });
+  }
+
+  /** Records when the server last answered, unless a later time is there. */
+  saveLastOK(id: string, ts: number): void {
+    this.sql.exec(
+      `INSERT INTO last_ok (server_id, ts) VALUES (?, ?)
+       ON CONFLICT (server_id) DO UPDATE SET ts = max(ts, excluded.ts)`,
+      id, ts,
+    );
+  }
+
+  /** The last day whose total is kept, if any. */
+  rolledThrough(id: string): number | undefined {
+    return this.sql.exec<{ day: number }>(`SELECT day FROM rolled WHERE server_id = ?`, id)[0]?.day;
   }
 
   /** The server's samples from from up to, not including, to, oldest first. */
@@ -121,14 +136,17 @@ export class Store {
   }
 
   /** Totals every day before today that has probes of the server and no total
-   * yet. A day is totalled once, after it ends, and a day with no probes gets
-   * no total: in the record it stays a day without data. */
+   * yet, and notes that every day before today is closed. A day is totalled
+   * once, after it ends, and a day with no probes gets no total: in the record
+   * it stays a day without data. Only the days after the last closed one are
+   * read. */
   rollup(id: string, today: number): void {
+    const from = (this.rolledThrough(id) ?? -1) + 1;
     const days = this.sql
       .exec<{ day: number }>(
-        `SELECT DISTINCT ts / ? AS day FROM probes WHERE server_id = ? AND ts < ?
+        `SELECT DISTINCT ts / ? AS day FROM probes WHERE server_id = ? AND ts >= ? AND ts < ?
          AND ts / ? NOT IN (SELECT day FROM daily WHERE server_id = ?)`,
-        MS_PER_DAY, id, dayStart(today), MS_PER_DAY, id,
+        MS_PER_DAY, id, dayStart(from), dayStart(today), MS_PER_DAY, id,
       )
       .map((r) => Math.floor(r.day));
     for (const d of days) {
@@ -139,6 +157,11 @@ export class Store {
         id, d, u.up, u.observed, medianLatency(samples),
       );
     }
+    this.sql.exec(
+      `INSERT INTO rolled (server_id, day) VALUES (?, ?)
+       ON CONFLICT (server_id) DO UPDATE SET day = max(day, excluded.day)`,
+      id, today - 1,
+    );
   }
 
   /** The server's day totals from from to to, both included. Days without a
