@@ -41,29 +41,44 @@ export function percent(u: Uptime): number | null {
   return Math.floor((u.up * 100_000) / u.observed) / 1000;
 }
 
-/** Counts the minutes samples cover. A vantage point succeeded in a minute
- * when more than half its probes in that minute succeeded, and the minute was
- * up when more than half the vantage points that probed in it succeeded. A tie
- * is down: "most" means more than half, at both levels. */
-export function tally(samples: Iterable<Sample>): Uptime {
-  const minutes = new Map<number, Map<string, { ok: number; failed: number }>>();
-  for (const s of samples) {
-    const m = Math.floor(s.at / 60_000);
-    let byVantage = minutes.get(m);
-    if (!byVantage) minutes.set(m, (byVantage = new Map()));
-    let c = byVantage.get(s.vantage);
-    if (!c) byVantage.set(s.vantage, (c = { ok: 0, failed: 0 }));
-    if (s.ok) c.ok++;
-    else c.failed++;
-  }
+/** One minute's probes, by vantage point. */
+export type MinuteCounts = Map<string, { ok: number; failed: number }>;
+
+export const minuteOf = (ms: number): number => Math.floor(ms / 60_000);
+
+/** Adds one sample to a by-minute record. */
+export function record(minutes: Map<number, MinuteCounts>, s: Sample): void {
+  const m = minuteOf(s.at);
+  let byVantage = minutes.get(m);
+  if (!byVantage) minutes.set(m, (byVantage = new Map()));
+  let c = byVantage.get(s.vantage);
+  if (!c) byVantage.set(s.vantage, (c = { ok: 0, failed: 0 }));
+  if (s.ok) c.ok++;
+  else c.failed++;
+}
+
+/** Counts the minutes of a by-minute record from from up to, not including,
+ * to (minute numbers). A vantage point succeeded in a minute when more than
+ * half its probes in that minute succeeded, and the minute was up when more
+ * than half the vantage points that probed in it succeeded. A tie is down:
+ * "most" means more than half, at both levels. */
+export function tallyMinutes(minutes: Map<number, MinuteCounts>, from = -Infinity, to = Infinity): Uptime {
   const u: Uptime = { up: 0, observed: 0 };
-  for (const byVantage of minutes.values()) {
+  for (const [m, byVantage] of minutes) {
+    if (m < from || m >= to) continue;
     let up = 0;
     for (const c of byVantage.values()) if (c.ok > c.failed) up++;
     u.observed++;
     if (up * 2 > byVantage.size) u.up++;
   }
   return u;
+}
+
+/** Counts the minutes samples cover, by the rule of tallyMinutes. */
+export function tally(samples: Iterable<Sample>): Uptime {
+  const minutes = new Map<number, MinuteCounts>();
+  for (const s of samples) record(minutes, s);
+  return tallyMinutes(minutes);
 }
 
 /** The median latency of the successful samples, or 0 when none succeeded. */

@@ -26,6 +26,11 @@ export interface Env {
   SITE_ORIGIN: string;
 }
 
+/** How long the edge keeps an answer from the monitor. A page polls every
+ * 30 s; with many pages open, one request in this long reaches the Durable
+ * Object, whose free plan allows 100,000 requests a day. */
+const EDGE_CACHE_S = 15;
+
 /** How long a fetched registry is used before it is fetched again. */
 const REGISTRY_FOR_MS = 5 * 60 * 1000;
 
@@ -113,10 +118,6 @@ export default {
       headers.set("Access-Control-Expose-Headers", "Date");
       headers.set("Vary", "Origin");
     }
-    const json = (body: unknown, status = 200) => {
-      headers.set("Content-Type", "application/json");
-      return new Response(JSON.stringify(body), { status, headers });
-    };
     const text = (body: string, status: number) => {
       headers.set("Content-Type", "text/plain; charset=utf-8");
       return new Response(body + "\n", { status, headers });
@@ -146,21 +147,42 @@ export default {
       console.error(`chirp-status: ${what}: ${(e as Error)?.stack ?? String(e)}`);
       return text("the monitor is not answering", 503);
     };
+    // The rounds keep themselves going on the object's alarm, and the cron
+    // sets it again if it is ever lost: a request does not need to.
     let stub: DurableObjectStub<StatusMonitor>;
     try {
       stub = env.STATUS.getByName("monitor");
-      ctx.waitUntil(stub.ensureRunning().catch((e) => console.error(`chirp-status: ensureRunning: ${(e as Error)?.stack ?? String(e)}`)));
     } catch (e) {
       return failed("reaching the monitor", e);
     }
 
-    if (url.pathname === "/v1/servers") {
-      try {
-        return json(await stub.snapshot());
-      } catch (e) {
-        return failed("snapshot", e);
+    // An answer is kept at the edge for EDGE_CACHE_S, under a key of only
+    // what makes it differ, so a query string cannot get past the cache. The
+    // headers, Date first, are always this response's own.
+    const cache = (caches as unknown as { default: Cache }).default;
+    const edge = async (key: string, make: () => Promise<unknown>, what: string): Promise<Response> => {
+      const req = new Request(`${url.origin}${key}`);
+      const hit = await cache.match(req);
+      if (hit) {
+        headers.set("Content-Type", "application/json");
+        return new Response(await hit.text(), { status: 200, headers });
       }
-    }
+      let body: unknown;
+      try {
+        body = await make();
+      } catch (e) {
+        return failed(what, e);
+      }
+      if (body === null) return text("no such server", 404);
+      const encoded = JSON.stringify(body);
+      ctx.waitUntil(cache.put(req, new Response(encoded, {
+        headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${EDGE_CACHE_S}` },
+      })));
+      headers.set("Content-Type", "application/json");
+      return new Response(encoded, { status: 200, headers });
+    };
+
+    if (url.pathname === "/v1/servers") return edge("/v1/servers", () => stub.snapshot(), "snapshot");
 
     const m = /^\/v1\/servers\/([a-z0-9-]{1,40})\/history$/.exec(url.pathname);
     if (m) {
@@ -169,14 +191,11 @@ export default {
       if (!/^\d+$/.test(raw ?? "90") || days < 1 || days > MAX_HISTORY_DAYS) {
         return text(`days must be 1 to ${MAX_HISTORY_DAYS}`, 400);
       }
-      let history: DayStatus[] | null;
-      try {
-        history = await stub.history(m[1]!, days);
-      } catch (e) {
-        return failed("history", e);
-      }
-      if (history === null) return text("no such server", 404);
-      return json({ id: m[1], days: history });
+      const id = m[1]!;
+      return edge(`/v1/servers/${id}/history?days=${days}`, async () => {
+        const history = await stub.history(id, days);
+        return history === null ? null : { id, days: history };
+      }, "history");
     }
     return text("not found", 404);
   },

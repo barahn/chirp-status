@@ -14,3 +14,19 @@ export function memorySql(): Sql {
     transaction: (fn) => db.transaction(fn)(),
   };
 }
+
+/** memorySql, counting the statements run through it. */
+export function countingSql(): { sql: Sql; statements: string[] } {
+  const inner = memorySql();
+  const statements: string[] = [];
+  return {
+    statements,
+    sql: {
+      exec: <T,>(query: string, ...bindings: unknown[]) => {
+        statements.push(query.trim().split(/\s+/).slice(0, 3).join(" "));
+        return inner.exec<T>(query, ...bindings);
+      },
+      transaction: (fn) => inner.transaction(fn),
+    },
+  };
+}
