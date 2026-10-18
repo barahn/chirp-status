@@ -11,6 +11,7 @@ import { DurableObject } from "cloudflare:workers";
 import { MAX_HISTORY_DAYS, Monitor, type DayStatus, type Snapshot } from "./monitor";
 import { servePage, upstreamPath } from "./page";
 import { parseServers, type Server } from "./registry";
+import { alarmNeedsSetting } from "./schedule";
 import { Store, type Sql } from "./store";
 import { INTERVAL_MS } from "./uptime";
 
@@ -55,14 +56,21 @@ export class StatusMonitor extends DurableObject<Env> {
   /** Starts the rounds if they are not running. Called on every request and
    * by the cron, so an alarm that was ever lost is set again. */
   async ensureRunning(): Promise<void> {
-    if ((await this.ctx.storage.getAlarm()) === null) {
-      await this.ctx.storage.setAlarm(Date.now());
+    const now = Date.now();
+    if (alarmNeedsSetting(await this.ctx.storage.getAlarm(), now)) {
+      await this.ctx.storage.setAlarm(now);
     }
   }
 
   override async alarm(): Promise<void> {
     // The next round is set first: a round that throws still has a successor.
-    await this.ctx.storage.setAlarm(Date.now() + INTERVAL_MS);
+    // If even that fails (storage refused, as when a plan's limit is hit), it
+    // is logged; the cron sets the alarm again once storage answers.
+    try {
+      await this.ctx.storage.setAlarm(Date.now() + INTERVAL_MS);
+    } catch (e) {
+      console.error(`chirp-status: setting the next round: ${(e as Error)?.stack ?? String(e)}`);
+    }
     try {
       await this.monitor.round(await this.servers());
     } catch (e) {
