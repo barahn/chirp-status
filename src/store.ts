@@ -144,8 +144,12 @@ export class Store {
     const from = (this.rolledThrough(id) ?? -1) + 1;
     const days = this.sql
       .exec<{ day: number }>(
-        `SELECT DISTINCT ts / ? AS day FROM probes WHERE server_id = ? AND ts >= ? AND ts < ?
-         AND ts / ? NOT IN (SELECT day FROM daily WHERE server_id = ?)`,
+        // A Durable Object binds every number as REAL, which would make this a
+        // fractional division: the casts keep the day a whole number however
+        // the parameter arrives.
+        `SELECT DISTINCT CAST(ts AS INTEGER) / CAST(? AS INTEGER) AS day FROM probes
+         WHERE server_id = ? AND ts >= ? AND ts < ?
+         AND CAST(ts AS INTEGER) / CAST(? AS INTEGER) NOT IN (SELECT day FROM daily WHERE server_id = ?)`,
         MS_PER_DAY, id, dayStart(from), dayStart(today), MS_PER_DAY, id,
       )
       .map((r) => Math.floor(r.day));
