@@ -73,6 +73,23 @@ linear and every commit keeps its sign-off. A merge to `main` is deployed to
 `status.usechirp.app` after a maintainer approves it in the `production`
 environment.
 
+## Versions
+
+The Worker is deployed from `main`, not from releases, so it has no version
+yet. When it gets one, it follows the policy of every Barahn repository
+(Chirp's and remotekit's `docs/release.md`):
+
+- Semantic Versioning, `vMAJOR.MINOR.PATCH`, with pre-releases as
+  `vX.Y.Z-rc.N`;
+- annotated tags that never move or go away: a wrong one is answered with a
+  new version;
+- a release validates a set of changes, not a pull request;
+- before a tag: `bun install --frozen-lockfile`, `bun run typecheck`,
+  `bun test` and the Worker build all pass at that commit;
+- a release is first proposed with its version, why, the changes, their
+  impact and the exact commands, and tagged only after the maintainer says
+  yes.
+
 ## What is enforced
 
 CI checks every commit's `Signed-off-by`, that the code type-checks and its tests
