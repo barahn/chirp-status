@@ -43,16 +43,16 @@ test("answering the API reads nothing from storage", async () => {
   expect(f.statements).toEqual([]);
 });
 
-test("a round writes one row per server and reads nothing", async () => {
+test("a round writes each server's probe and its state, and reads nothing", async () => {
   const f = fixture();
   await f.monitor.round(servers); // the first round of the day also closes days
   f.now += INTERVAL_MS;
   f.statements.length = 0;
   await f.monitor.round(servers);
-  expect(f.statements).toEqual(Array(servers.length).fill("INSERT INTO probes"));
+  expect(f.statements).toEqual(Array(servers.length).fill(["INSERT INTO probes", "INSERT INTO memory"]).flat());
 });
 
-test("when a server last answered is written when it stops, and survives a restart", async () => {
+test("when a server last answered survives a restart", async () => {
   const f = fixture();
   await f.monitor.round(servers);
   f.now += INTERVAL_MS;
@@ -60,9 +60,7 @@ test("when a server last answered is written when it stops, and survives a resta
   await f.monitor.round(servers);
   f.now += INTERVAL_MS;
   f.healthy = false;
-  f.statements.length = 0;
   await f.monitor.round(servers);
-  expect(f.statements.filter((s) => s.startsWith("INSERT INTO last_ok"))).toHaveLength(servers.length);
 
   // A new monitor over the same storage, as after the object restarts.
   f.now += INTERVAL_MS;

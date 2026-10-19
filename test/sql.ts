@@ -21,16 +21,21 @@ function plainSql(): Sql {
   };
 }
 
-/** memorySql, counting the statements run through it. */
-export function countingSql(): { sql: Sql; statements: string[] } {
+/** memorySql, counting the statements run through it and the rows they
+ * return: what a Durable Object bills as rows read, at least. */
+export function countingSql(): { sql: Sql; statements: string[]; rows: { n: number } } {
   const inner = realBindingSql();
   const statements: string[] = [];
+  const rows = { n: 0 };
   return {
     statements,
+    rows,
     sql: {
       exec: <T,>(query: string, ...bindings: unknown[]) => {
         statements.push(query.trim().split(/\s+/).slice(0, 3).join(" "));
-        return inner.exec<T>(query, ...bindings);
+        const out = inner.exec<T>(query, ...bindings);
+        rows.n += out.length;
+        return out;
       },
       transaction: (fn) => inner.transaction(fn),
     },

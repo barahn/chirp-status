@@ -9,6 +9,10 @@ export const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** Deletes one server's probes older than a time. By server and time, so it
+ * runs on the index rather than reading every probe kept. */
+export const PRUNE_SQL = `DELETE FROM probes WHERE server_id = ? AND ts < ?`;
+
 /** The SQL the store needs: a Durable Object's storage in production, Bun's
  * SQLite in tests. Both are SQLite. */
 export interface Sql {
@@ -42,6 +46,12 @@ const SCHEMA = [
   )`,
   // The last day whose total is in daily, so a day's close reads only the
   // days not closed yet rather than every probe kept.
+  // What the monitor keeps in memory, one row per server, so an object taken
+  // out of memory gets it back for a row rather than for every probe.
+  `CREATE TABLE IF NOT EXISTS memory (
+    server_id TEXT    PRIMARY KEY,
+    state     TEXT    NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS rolled (
     server_id TEXT    PRIMARY KEY,
     day       INTEGER NOT NULL
@@ -93,6 +103,30 @@ export class Store {
         );
       }
     });
+  }
+
+  /** Records a probe and the server's state with it, together. */
+  addWithState(id: string, s: Sample, state: string): void {
+    this.sql.transaction(() => {
+      this.sql.exec(
+        `INSERT INTO probes (server_id, vantage, ts, ok, latency_ms, err_class) VALUES (?, ?, ?, ?, ?, ?)`,
+        id, s.vantage, s.at, s.ok ? 1 : 0, Math.round(s.latencyMs), s.err,
+      );
+      this.saveState(id, state);
+    });
+  }
+
+  /** The server's state as the monitor last saved it, if it has one. */
+  loadState(id: string): string | undefined {
+    return this.sql.exec<{ state: string }>(`SELECT state FROM memory WHERE server_id = ?`, id)[0]?.state;
+  }
+
+  saveState(id: string, state: string): void {
+    this.sql.exec(
+      `INSERT INTO memory (server_id, state) VALUES (?, ?)
+       ON CONFLICT (server_id) DO UPDATE SET state = excluded.state`,
+      id, state,
+    );
   }
 
   /** Records when the server last answered, unless a later time is there. */
@@ -180,9 +214,9 @@ export class Store {
       .map((r) => ({ day: r.day, uptime: { up: r.up_minutes, observed: r.observed_minutes }, p50Ms: r.p50_ms }));
   }
 
-  /** Deletes the probes older than before. Roll up first, or the days it
-   * deletes are never totalled. */
-  prune(before: number): void {
-    this.sql.exec(`DELETE FROM probes WHERE ts < ?`, before);
+  /** Deletes the server's probes older than before. Roll up first, or the
+   * days it deletes are never totalled. */
+  prune(id: string, before: number): void {
+    this.sql.exec(PRUNE_SQL, id, before);
   }
 }
