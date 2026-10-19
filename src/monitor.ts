@@ -6,11 +6,12 @@
 // worker.ts is a thin layer over this, so the tests can drive all of it with
 // a fake clock and a fake fetch.
 //
-// What the figures need is kept in memory, and storage is read only to start
-// and once a day: a Durable Object on Cloudflare's free plan may read five
-// million rows a day, and working out the figures from storage on every
-// request spent that in a day with a page polling it. Storage is the record;
-// memory is what the API answers from.
+// What the figures need is kept in memory, and saved with every probe as one
+// row per server: a Durable Object on Cloudflare's free plan may read five
+// million rows a day, and Cloudflare takes an object out of memory when it
+// likes, in production all but between every request. So an object that comes
+// back reads one row per server, and the probes are read only to close a day,
+// once, or to start from nothing.
 
 import { probe, type ProbeDeps } from "./probe";
 import { isNew, listing, type Kind, type Listing, type Server } from "./registry";
@@ -22,10 +23,6 @@ import {
 
 /** The longest history /v1/servers/{id}/history returns. */
 export const MAX_HISTORY_DAYS = 90;
-
-/** How often, at most, when a server last answered is written while it keeps
- * answering. When it stops, it is written at once. */
-export const LAST_OK_EVERY_MS = 10 * 60 * 1000;
 
 /** How many of a server's latest samples are kept for its verdict: enough
  * for OFFLINE_AFTER from each of a few vantage points. */
@@ -83,14 +80,45 @@ interface Mem {
   /** Its latest samples, oldest first, for its verdict. */
   recent: Sample[];
   lastOK?: number;
-  lastOKSaved?: number;
   /** The totals of the days before today, the last MAX_HISTORY_DAYS. */
   closed: Map<number, DayTotal>;
+  /** The last day closed: its total, and every one before, are in storage. */
+  rolledThrough: number;
+}
+
+/** A server's memory as one string, for its row in storage. */
+function encode(m: Mem): string {
+  return JSON.stringify({
+    minutes: [...m.minutes].map(([minute, byVantage]) => [minute, [...byVantage].map(([v, c]) => [v, c.ok, c.failed])]),
+    latencies: [...m.latencies],
+    recent: m.recent,
+    lastOK: m.lastOK ?? null,
+    closed: [...m.closed.values()].map((t) => [t.day, t.uptime.up, t.uptime.observed, t.p50Ms]),
+    rolledThrough: m.rolledThrough,
+  });
+}
+
+function decode(state: string): Mem {
+  const o = JSON.parse(state) as {
+    minutes: [number, [string, number, number][]][];
+    latencies: [number, number[]][];
+    recent: Sample[];
+    lastOK: number | null;
+    closed: [number, number, number, number][];
+    rolledThrough: number;
+  };
+  return {
+    minutes: new Map(o.minutes.map(([minute, vs]) => [minute, new Map(vs.map(([v, ok, failed]) => [v, { ok, failed }]))])),
+    latencies: new Map(o.latencies),
+    recent: o.recent,
+    lastOK: o.lastOK ?? undefined,
+    closed: new Map(o.closed.map(([day, up, observed, p50Ms]) => [day, { day, uptime: { up, observed }, p50Ms }])),
+    rolledThrough: o.rolledThrough,
+  };
 }
 
 export class Monitor {
   private readonly mem = new Map<string, Mem>();
-  private rolled = -1;
 
   constructor(
     private readonly store: Store,
@@ -98,18 +126,24 @@ export class Monitor {
     private readonly deps: ProbeDeps,
   ) {}
 
-  /** A server's memory, read from storage the first time it is asked for. */
+  /** A server's memory: its saved row, or, the first time ever, worked out
+   * from the probes and saved. */
   private memory(id: string): Mem {
     let m = this.mem.get(id);
     if (m) return m;
-    const now = this.deps.now();
-    const today = dayOf(now);
-    m = { minutes: new Map(), latencies: new Map(), recent: [], closed: new Map() };
-    for (const s of this.store.samples(id, dayStart(today - 1), now + 1)) this.remember(m, s);
-    m.lastOK = Math.max(m.lastOK ?? -Infinity, this.store.lastOK(id) ?? -Infinity);
-    if (!Number.isFinite(m.lastOK)) m.lastOK = undefined;
-    m.lastOKSaved = m.lastOK;
-    for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
+    const saved = this.store.loadState(id);
+    if (saved !== undefined) {
+      m = decode(saved);
+    } else {
+      const now = this.deps.now();
+      const today = dayOf(now);
+      m = { minutes: new Map(), latencies: new Map(), recent: [], closed: new Map(), rolledThrough: this.store.rolledThrough(id) ?? -1 };
+      for (const s of this.store.samples(id, dayStart(today - 1), now + 1)) this.remember(m, s);
+      m.lastOK = Math.max(m.lastOK ?? -Infinity, this.store.lastOK(id) ?? -Infinity);
+      if (!Number.isFinite(m.lastOK)) m.lastOK = undefined;
+      for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
+      this.store.saveState(id, encode(m));
+    }
     this.mem.set(id, m);
     return m;
   }
@@ -132,35 +166,26 @@ export class Monitor {
   async round(servers: Server[]): Promise<void> {
     const at = this.deps.now();
     const results = await Promise.all(servers.map((s) => probe(s.url, this.deps)));
+    const today = dayOf(at);
     servers.forEach((srv, i) => {
       const m = this.memory(srv.id);
       const s: Sample = { vantage: this.vantage, at, ...results[i]! };
-      const wasUp = m.recent.at(-1)?.ok ?? false;
-      this.store.add(srv.id, s);
       this.remember(m, s);
-      // When it last answered matters most once it stops: written then, and
-      // otherwise now and again.
-      const stopped = wasUp && !s.ok;
-      if (m.lastOK !== undefined && m.lastOK !== m.lastOKSaved &&
-          (stopped || at - (m.lastOKSaved ?? -Infinity) >= LAST_OK_EVERY_MS)) {
-        this.store.saveLastOK(srv.id, m.lastOK);
-        m.lastOKSaved = m.lastOK;
-      }
+      // Once a day, the days before today are closed; whether they are is
+      // in the saved state, so an object back in memory does not do it again.
+      if (m.rolledThrough < today - 1) this.closeDays(srv.id, m, today, at);
+      this.store.addWithState(srv.id, s, encode(m));
     });
-    const today = dayOf(at);
-    if (today !== this.rolled) {
-      for (const srv of servers) this.closeDays(srv.id, today);
-      this.store.prune(at - RETENTION_MS);
-      this.rolled = today;
-    }
   }
 
   /** Totals the days before today in storage, takes their totals into
-   * memory, and forgets what memory no longer needs. */
-  private closeDays(id: string, today: number): void {
-    const m = this.memory(id);
+   * memory, drops probes past retention, and forgets what memory no longer
+   * needs. */
+  private closeDays(id: string, m: Mem, today: number, at: number): void {
     this.store.rollup(id, today);
     for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
+    this.store.prune(id, at - RETENTION_MS);
+    m.rolledThrough = today - 1;
     for (const d of m.closed.keys()) if (d < today - MAX_HISTORY_DAYS) m.closed.delete(d);
     const keepFrom = minuteOf(dayStart(today - 1));
     for (const minute of m.minutes.keys()) if (minute < keepFrom) m.minutes.delete(minute);
