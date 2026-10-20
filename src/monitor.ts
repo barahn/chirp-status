@@ -24,6 +24,14 @@ import {
 /** The longest history /v1/servers/{id}/history returns. */
 export const MAX_HISTORY_DAYS = 90;
 
+/** How often, at most, when a server last answered is written to its own
+ * table. The saved state carries the same time and is written every round, so
+ * this table is read only when that state is gone; an hour stale is the whole
+ * cost of being wrong, while writing it every round would add a third of a
+ * round's writes and cut how many servers the free plan's hundred thousand
+ * writes a day allow from 17 to 11. */
+const LAST_OK_EVERY_MS = 60 * 60 * 1000;
+
 /** How many of a server's latest samples are kept for its verdict: enough
  * for OFFLINE_AFTER from each of a few vantage points. */
 const RECENT = 4 * OFFLINE_AFTER;
@@ -80,6 +88,9 @@ interface Mem {
   /** Its latest samples, oldest first, for its verdict. */
   recent: Sample[];
   lastOK?: number;
+  /** When lastOK was last written to the last_ok table, so that it is written
+   * at most once an hour rather than on every probe. */
+  lastOKSaved?: number;
   /** The totals of the days before today, the last MAX_HISTORY_DAYS. */
   closed: Map<number, DayTotal>;
   /** The last day closed: its total, and every one before, are in storage. */
@@ -93,6 +104,7 @@ function encode(m: Mem): string {
     latencies: [...m.latencies],
     recent: m.recent,
     lastOK: m.lastOK ?? null,
+    lastOKSaved: m.lastOKSaved ?? null,
     closed: [...m.closed.values()].map((t) => [t.day, t.uptime.up, t.uptime.observed, t.p50Ms]),
     rolledThrough: m.rolledThrough,
   });
@@ -104,6 +116,7 @@ function decode(state: string): Mem {
     latencies: [number, number[]][];
     recent: Sample[];
     lastOK: number | null;
+    lastOKSaved?: number | null;
     closed: [number, number, number, number][];
     rolledThrough: number;
   };
@@ -112,6 +125,9 @@ function decode(state: string): Mem {
     latencies: new Map(o.latencies),
     recent: o.recent,
     lastOK: o.lastOK ?? undefined,
+    // Absent in a state written before this was kept: treated as never
+    // written, so the first round after writes it.
+    lastOKSaved: o.lastOKSaved ?? undefined,
     closed: new Map(o.closed.map(([day, up, observed, p50Ms]) => [day, { day, uptime: { up, observed }, p50Ms }])),
     rolledThrough: o.rolledThrough,
   };
@@ -174,7 +190,14 @@ export class Monitor {
       // Once a day, the days before today are closed; whether they are is
       // in the saved state, so an object back in memory does not do it again.
       if (m.rolledThrough < today - 1) this.closeDays(srv.id, m, today, at);
-      this.store.addWithState(srv.id, s, encode(m));
+      // The fallback is refreshed at most once an hour, and only by a probe
+      // that answered: a failed probe says nothing about when it last did.
+      let saving: number | undefined;
+      if (s.ok && (m.lastOKSaved === undefined || s.at - m.lastOKSaved >= LAST_OK_EVERY_MS)) {
+        saving = s.at;
+        m.lastOKSaved = s.at;
+      }
+      this.store.addWithState(srv.id, s, encode(m), saving);
     });
   }
 

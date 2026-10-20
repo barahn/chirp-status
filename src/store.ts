@@ -105,14 +105,18 @@ export class Store {
     });
   }
 
-  /** Records a probe and the server's state with it, together. */
-  addWithState(id: string, s: Sample, state: string): void {
+  /** Records a probe and the server's state with it, together. With lastOK,
+   * when the server last answered is written in the same transaction: either
+   * all three land or none does, so the fallback never names a time the
+   * probes do not support. */
+  addWithState(id: string, s: Sample, state: string, lastOK?: number): void {
     this.sql.transaction(() => {
       this.sql.exec(
         `INSERT INTO probes (server_id, vantage, ts, ok, latency_ms, err_class) VALUES (?, ?, ?, ?, ?, ?)`,
         id, s.vantage, s.at, s.ok ? 1 : 0, Math.round(s.latencyMs), s.err,
       );
       this.saveState(id, state);
+      if (lastOK !== undefined) this.saveLastOK(id, lastOK);
     });
   }
 
@@ -129,7 +133,11 @@ export class Store {
     );
   }
 
-  /** Records when the server last answered, unless a later time is there. */
+  /** Records when the server last answered, unless a later time is there.
+   * This is the fallback the monitor reads when a server's saved state is
+   * gone: the state carries the same time, and is written every round, but a
+   * state that is lost or will not decode leaves only the probes, of which
+   * barely two days are kept. */
   saveLastOK(id: string, ts: number): void {
     this.sql.exec(
       `INSERT INTO last_ok (server_id, ts) VALUES (?, ?)
