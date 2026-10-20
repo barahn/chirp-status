@@ -15,6 +15,14 @@ export interface Sql {
 }
 
 const SCHEMA = [
+  // What earlier versions wrote and nothing reads any more: one row per probe,
+  // with its index, and a table whose writer was gone before this. Dropping a
+  // table costs six rows read and nothing written, whatever it holds, while
+  // deleting its rows would cost one write each; and a drop with nothing to
+  // drop costs nothing at all, so these stay here rather than being run once
+  // by hand.
+  `DROP TABLE IF EXISTS probes`,
+  `DROP TABLE IF EXISTS last_ok`,
   `CREATE TABLE IF NOT EXISTS daily (
     server_id        TEXT    NOT NULL,
     day              INTEGER NOT NULL, -- days since 1970-01-01, UTC
