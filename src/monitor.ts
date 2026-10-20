@@ -135,18 +135,29 @@ export class Monitor {
     private readonly deps: ProbeDeps,
   ) {}
 
-  /** A server's memory: its saved row, or, the first time ever, worked out
-   * from the probes and saved. */
+  /** A server's memory: its saved row, or a fresh start when there is none to
+   * read. */
   private memory(id: string): Mem {
     let m = this.mem.get(id);
     if (m) return m;
     const saved = this.store.loadState(id);
     if (saved !== undefined) {
-      m = decode(saved);
-    } else {
-      // The first time ever, or after the row is lost: there is nothing to
-      // work the day in course out from, so it starts empty, with the days
-      // already closed.
+      try {
+        m = decode(saved);
+      } catch (e) {
+        // A row that will not decode -- written by a version whose encoding
+        // this one does not know, or truncated -- must not stop the rounds.
+        // Read crudely it threw here, out of the round, and out of the alarm
+        // that runs the rounds, which is how a monitor stops for good. The day
+        // in course is lost either way; starting afresh writes a row this
+        // version can read and keeps the record going.
+        console.error(`chirp-status: ${id}: state unreadable, starting afresh: ${(e as Error)?.message ?? String(e)}`);
+      }
+    }
+    if (m === undefined) {
+      // The first time ever, or after a row that is gone or unreadable: there
+      // is nothing to work the day in course out from, so it starts empty,
+      // with the days already closed.
       const today = dayOf(this.deps.now());
       m = { minutes: new Map(), latencies: new Map(), recent: [], closed: new Map(), rolledThrough: this.store.rolledThrough(id) ?? -1 };
       for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);

@@ -46,3 +46,33 @@ test("an object recreated before every round and every answer reads a handful of
   expect(fresh().status(servers)).toEqual(kept.status(servers));
   expect(fresh().historyStatus("n1", 3)).toEqual(kept.historyStatus("n1", 3));
 }, 60_000); // 3,600 rounds, each by an object made anew
+
+test("a state row that will not decode starts the server afresh instead of stopping the rounds", async () => {
+  const { sql } = countingSql();
+  const store = new Store(sql);
+  let now = dayStart(d0) + 12 * 3_600_000;
+  const monitor = () => new Monitor(store, "v", { now: () => now, fetch: async () => new Response("ok") });
+
+  // A day closed, so there is a record in storage besides the state row.
+  await monitor().round(servers);
+  now = dayStart(d0 + 1) + 60_000;
+  await monitor().round(servers);
+  const closed = monitor().historyStatus("n1", 2)[0]!;
+  expect(closed.observed_minutes).toBeGreaterThan(0);
+
+  // The row is now written by a version this one cannot read.
+  store.saveState("n1", `{"minutes":[[`);
+  now += INTERVAL_MS;
+  const fresh = monitor();
+  expect(() => fresh.status(servers)).not.toThrow();
+  await fresh.round(servers); // the round goes on rather than throwing out of the alarm
+
+  const s = fresh.status(servers).servers[0]!;
+  expect(s.state).toBe("up");
+  expect(s.last_checked).toBe(new Date(now).toISOString());
+  // The day in course is gone, as it only ever lived in that row; the day
+  // already closed is not, since its total is its own row.
+  expect(fresh.historyStatus("n1", 2)[0]).toEqual(closed);
+  // And the row left behind is one this version can read.
+  expect(() => new Monitor(store, "v", { now: () => now, fetch: async () => new Response("ok") }).status(servers)).not.toThrow();
+});
