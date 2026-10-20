@@ -32,6 +32,11 @@ describe("parseServers", () => {
     path: (s) => { s.url = "https://example.org/relay"; },
     query: (s) => { s.url = "https://example.org/?x=1"; },
     credentials: (s) => { s.url = "https://u:p@example.org"; },
+    localhost: (s) => { s.url = "https://localhost"; },
+    "no dot": (s) => { s.url = "https://relay"; },
+    ".internal": (s) => { s.url = "https://db.corp.internal"; },
+    ".local": (s) => { s.url = "https://printer.local"; },
+    "numeric last label": (s) => { s.url = "https://127.1"; },
     "no operator": (s) => { s.operator = ""; },
     "no github": (s) => { delete s.github; },
     "bad github": (s) => { s.github = "-ops"; },
@@ -40,6 +45,11 @@ describe("parseServers", () => {
     "bad state": (s) => { s.state = "paused"; },
     "misspelt field": (s) => { s.behind_cnd = true; },
   };
+  test("refuses a list past the limit", () => {
+    const many = Array.from({ length: 501 }, (_, i) => ({ ...node(), id: `n${i}` }));
+    expect(() => parseServers({ servers: many })).toThrow();
+  });
+
   for (const [name, spoil] of Object.entries(spoilt)) {
     test(`refuses: ${name}`, () => {
       const s = node();

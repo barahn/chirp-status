@@ -30,6 +30,23 @@ import {
 /** The longest history /v1/servers/{id}/history returns. */
 export const MAX_HISTORY_DAYS = 90;
 
+/** How many servers a round probes at the same time. */
+export const PROBE_CONCURRENCY = 50;
+
+/** fn over items, at most limit at a time; results in the order of items. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 /** How many of a server's latest samples are kept for its verdict: enough
  * for OFFLINE_AFTER from each of a few vantage points. */
 const RECENT = 4 * OFFLINE_AFTER;
@@ -186,12 +203,12 @@ export class Monitor {
     if (m.recent.length > RECENT) m.recent.splice(0, m.recent.length - RECENT);
   }
 
-  /** Probes every server once, all at the same time, records what it saw, and
-   * closes the days that have ended. */
+  /** Probes every server once, at most PROBE_CONCURRENCY at the same time,
+   * records what it saw, and closes the days that have ended. */
   async round(servers: Server[]): Promise<void> {
     this.applyRenames();
     const at = this.deps.now();
-    const results = await Promise.all(servers.map((s) => probe(s.url, this.deps)));
+    const results = await mapLimit(servers, PROBE_CONCURRENCY, (s) => probe(s.url, this.deps));
     const today = dayOf(at);
     servers.forEach((srv, i) => {
       const m = this.memory(srv.id);
