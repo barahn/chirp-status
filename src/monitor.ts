@@ -149,6 +149,7 @@ export class Monitor {
       // already closed.
       const today = dayOf(this.deps.now());
       m = { minutes: new Map(), latencies: new Map(), recent: [], closed: new Map(), rolledThrough: this.store.rolledThrough(id) ?? -1 };
+      m.lastOK = this.store.lastOK(id);
       for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
       this.store.saveState(id, encode(m));
     }
