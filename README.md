@@ -42,6 +42,24 @@ redirect included) or `other`, never which of DNS, the connection or TLS gave
 out. The probes come from the one place the Durable Object lives, which is
 the vantage point.
 
+## Renaming a server
+
+A server's record is keyed by its id, in all five of the Durable Object's
+tables. So a server that changes its id in Chirp's registry would otherwise
+read as the old one vanishing and a new one appearing with no history: the
+registry says what a server is called now, never what it was called before.
+
+A rename is therefore declared here, in [`src/renames.ts`](src/renames.ts), by
+a pull request, and the monitor moves the record on its next round. Declare it
+before, or together with, the pull request that renames the server in Chirp's
+list, so that no round runs with the new id and no record under it.
+
+Moving a record into an id that already has one is refused, not merged: two ids
+with a record are two servers, and folding their days together would invent
+uptime neither was measured to have. A declared rename stays after it has been
+applied — applying it again does nothing — and may be deleted only once no
+storage still holds the old id.
+
 The definitions, and why the network is shaped as it is, are in Chirp's
 [`docs/status-page-proposal.md`](https://github.com/barahn/chirp/blob/main/docs/status-page-proposal.md).
 The list of servers is Chirp's
@@ -71,7 +89,8 @@ by the monitor's clock rather than the visitor's.
   "interval_seconds": 30,
   "servers": [
     {
-      "id": "pve-dc-01", "kind": "node", "url": "https://relay.usechirp.app",
+      "id": "bradador-vector", "nickname": "Bradador Vector",
+      "kind": "node", "url": "https://relay.usechirp.app",
       "operator": "Fabrintek", "region": "BR", "behind_cdn": false,
       "added": "2026-10-15", "new": true, "listing": "active",
       "state": "up", "last_checked": "2026-10-16T13:44:58.000Z",
@@ -85,6 +104,18 @@ by the monitor's clock rather than the visitor's.
   ]
 }
 ```
+
+`nickname` is a name from Brazilian folklore and a word from the trade —
+"Bradador Vector" — derived from the host in `url` so that a person can speak
+of a server without reciting its id. It is derived on every request, never
+stored: the id stays what the operator chose in Chirp's registry, and what
+`/v1/servers/{id}/history` and the Durable Object's rows are keyed by. A host
+always gets the same nickname, in any runtime, for good.
+
+It is not a key, and must not be used as one. There are 1,280 pairs, so two
+servers may share a nickname; only the id is unique. And adding a word to
+either list in [`src/folklore.ts`](src/folklore.ts) re-shuffles every nickname,
+which is why those lists are appended to and never reordered.
 
 `state` is `up`, `failing`, `offline` or `unknown`. `last_error`, when the
 latest probe failed, is `timeout`, `status` or `other`; it is absent when that

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Fabrintek Engenharia Digital Ltda
 
 import { describe, expect, test } from "bun:test";
+import { FOLKLORE, TECH } from "../src/folklore";
 import { MAX_HISTORY_DAYS, Monitor } from "../src/monitor";
 import { parseServers } from "../src/registry";
 import { Store, dayOf, dayStart, dayString } from "../src/store";
@@ -132,8 +133,11 @@ test("the snapshot has every field the status page reads", async () => {
   const s = snap.servers[0]!;
   expect(Object.keys(s).sort()).toEqual([
     "added", "behind_cdn", "id", "kind", "last_checked", "last_ok", "latency_ms",
-    "listing", "new", "operator", "state", "uptime", "url",
+    "listing", "new", "nickname", "operator", "state", "uptime", "url",
   ]);
   expect(s).toMatchObject({ id: "n1", new: true, listing: "active" });
+  const [folk, tech] = s.nickname!.split(" ");
+  expect(FOLKLORE).toContain(folk as never);
+  expect(TECH).toContain(tech as never);
   expect(Object.keys(s.uptime).sort()).toEqual(["24h", "30d", "90d"]);
 });
