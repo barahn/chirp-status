@@ -37,6 +37,19 @@ const KEPT_HEADERS = [
   "Referrer-Policy", "Permissions-Policy", "X-Frame-Options", "Strict-Transport-Security",
 ];
 
+/** What a response carries when the site's rules did not send the header: a
+ * page served from here must not be less guarded than one served from the
+ * site. The site's own value, when there is one, always wins. */
+const DEFAULT_HEADERS: Record<string, string> = {
+  "Content-Security-Policy":
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "X-Frame-Options": "DENY",
+  "Cross-Origin-Opener-Policy": "same-origin",
+};
+
 /** The page, or one of its assets, as the site publishes it at path. */
 export async function servePage(
   request: Request,
@@ -54,6 +67,9 @@ export async function servePage(
   for (const name of KEPT_HEADERS) {
     const value = upstream.headers.get(name);
     if (value !== null) headers.set(name, value);
+  }
+  for (const [name, value] of Object.entries(DEFAULT_HEADERS)) {
+    if (!headers.has(name)) headers.set(name, value);
   }
   headers.set("X-Content-Type-Options", "nosniff");
   const response = new Response(upstream.body, { status: upstream.status, headers });
