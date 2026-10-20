@@ -17,7 +17,7 @@ test("an alarm still to come, or just due, is left alone", () => {
   expect(alarmNeedsSetting(now - 2 * INTERVAL_MS, now)).toBe(false);
 });
 
-// After the free plan's limit blocked storage for a day, the alarm stayed
+// After storage was blocked by quota for a day, the alarm stayed
 // registered for a time long past, the runtime having given up retrying it,
 // and the rounds never came back: a set alarm was taken to be a running one.
 test("an alarm overdue by more than two rounds is set again", () => {

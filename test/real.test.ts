@@ -5,7 +5,7 @@
 // day a probe fell on, ts / 86400000, came out a fraction, closing a day wrote
 // its first total and then failed on the next, and the failure came back on
 // every round, re-reading every probe: day 17 stayed without a total, and the
-// reads went towards the free plan's limit.
+// reads went towards the daily storage quota.
 
 import { expect, test } from "bun:test";
 import { Monitor } from "../src/monitor";

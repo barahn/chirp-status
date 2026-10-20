@@ -71,7 +71,7 @@ describe("the API", () => {
   });
 });
 
-describe("the free plan's usage", () => {
+describe("daily quota usage", () => {
   test("well under the limits is no problem", () => {
     expect(checkUsage({ rowsRead: 30_000, rowsWritten: 9_000, requests: 3_500 })).toEqual([]);
   });

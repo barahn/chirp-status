@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Fabrintek Engenharia Digital Ltda
 //
 // What the watchdog decides, apart from what it fetches: whether the monitor
-// is answering with fresh figures, whether the day's use of the free plan is
+// is answering with fresh figures, whether the day's operational use is
 // getting near a limit, and what that means for the issue that reports it.
 // run.ts does the fetching. It is outside the Worker, on GitHub Actions, so
 // it still sees the monitor when the monitor itself cannot run.
@@ -11,7 +11,7 @@
  * are a hiccup, this many a monitor that stopped. */
 export const STALE_MS = 3 * 60 * 1000;
 
-/** The Workers free plan's daily limits for Durable Objects, reset at
+/** Daily limits for Durable Objects, reset at
  * 00:00 UTC. Past one, that kind of operation is refused until the reset. */
 export const FREE_LIMITS = { rowsRead: 5_000_000, rowsWritten: 100_000, requests: 100_000 } as const;
 
@@ -82,7 +82,7 @@ export function checkUsage(u: Usage, limits: Usage = FREE_LIMITS, warnAt = USAGE
   for (const k of Object.keys(NAMES) as (keyof Usage)[]) {
     if (u[k] >= warnAt * limits[k]) {
       const pct = Math.floor((u[k] / limits[k]) * 100);
-      out.push({ key: k, text: `${NAMES[k]} today: ${n(u[k])} of ${n(limits[k])} (${pct} %) on the free plan; past it, they are refused until 00:00 UTC` });
+      out.push({ key: k, text: `${NAMES[k]} today: ${n(u[k])} of ${n(limits[k])} (${pct} %); operations may be throttled past limit` });
     }
   }
   return out;

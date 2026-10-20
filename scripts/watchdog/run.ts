@@ -3,8 +3,8 @@
 //
 // The watchdog, run every few minutes by .github/workflows/watchdog.yml. It
 // asks the monitor for its figures as a visitor would, and, when it has a
-// read-only analytics token, asks Cloudflare how much of the free plan's
-// daily limits the account has used. Anything wrong is reported on one issue,
+// read-only analytics token, asks Cloudflare how much of the daily
+// limits the account has used. Anything wrong is reported on one issue,
 // labelled watchdog, which is closed again once all is well. check.ts decides;
 // this file only fetches.
 //

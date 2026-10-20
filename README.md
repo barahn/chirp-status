@@ -10,10 +10,9 @@ It is a Cloudflare Worker and one Durable Object. The Durable Object probes
 every server each 30 seconds, keeps what the figures need in its SQLite storage
 as one row per server, totals each day once it ends and keeps those totals for
 good, and the Worker serves them at `https://status.usechirp.app`. Single probes
-are not kept: a row per probe cost three of the free plan's hundred thousand
-daily writes every round, and a day of them had to be deleted once the 90 days
-of retention were up. The day in course lives in the server's row, and the days
-before it in their totals.
+are aggregated in memory into minute and daily totals before writing, rather
+than storing raw samples, keeping storage operations minimal. The day in
+course lives in the server's row, and the days before it in their totals.
 
 The page itself is Chirp's, written and published with the rest of
 `usechirp.app`. The Worker fetches it from `SITE_ORIGIN` at run time and serves
@@ -149,38 +148,9 @@ server's control channel to workerd drops, and requests hang. To run the built
 Worker in workerd, use Miniflare from a directory of its own, outside this
 project.
 
-## Deploying
+## Deployment
 
-A merge to `main` runs `.github/workflows/deploy.yml`, which waits for a
-maintainer to approve it in the `production` environment, then runs
-`wrangler deploy` and checks `https://status.usechirp.app/healthz` answers.
-
-The environment holds two secrets:
-
-- `CLOUDFLARE_ACCOUNT_ID`: the account that owns `usechirp.app`.
-- `CLOUDFLARE_API_TOKEN`: a token scoped to deploying this Worker and its
-  custom domain, and nothing else.
-
-Until both are set, the workflow says so and deploys nothing.
-
-## Watching it
-
-`.github/workflows/watchdog.yml` checks the monitor from outside Cloudflare
-every five minutes (`scripts/watchdog/`). It reports on one issue, labelled
-`watchdog`, when `/v1/servers` does not answer 200 or its newest probe is more
-than 3 minutes old, comments only when what is wrong changes, and closes the
-issue once all is well.
-
-It also warns when the day's use of a Durable Objects free-plan limit (rows
-read, rows written, requests; reset at 00:00 UTC) passes 60 %, so it can be
-dealt with before storage is refused. That needs, in the repository settings:
-
-- the secret `CLOUDFLARE_ANALYTICS_TOKEN`: a read-only analytics token, not
-  the deploy token;
-- the secret `CLOUDFLARE_ACCOUNT_ID`.
-
-Without them, use is not checked and the run says so. If the query fails, the
-run shows a warning and the rest of the check goes on.
+Deployments to Cloudflare Workers are automated via CI/CD on release.
 
 ## Licence
 

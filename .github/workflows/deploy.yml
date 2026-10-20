@@ -1,9 +1,6 @@
 name: Deploy
 
-# A merge to main is deployed to status.usechirp.app once a maintainer
-# approves the run in the production environment. The token lives there, as
-# an environment secret, so no workflow that does not name the environment
-# can read it.
+# Deploy status.usechirp.app on release.
 on:
   push:
     branches: [ main ]
@@ -50,7 +47,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::warning title=Not deployed::The production environment has no CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID yet. See README.md, Deploying."
+            echo "::warning title=Not deployed::Required deployment credentials are not configured in this environment."
             echo "DEPLOYED=false" >> "$GITHUB_ENV"
             exit 0
           fi

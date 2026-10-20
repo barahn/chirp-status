@@ -28,8 +28,8 @@ export interface Env {
 }
 
 /** How long the edge keeps an answer from the monitor. A page polls every
- * 30 s; with many pages open, one request in this long reaches the Durable
- * Object, whose free plan allows 100,000 requests a day. */
+ * 30 s; caching responses at the edge minimizes direct requests to the
+ * Durable Object. */
 const EDGE_CACHE_S = 15;
 
 /** How long a fetched registry is used before it is fetched again. */
@@ -64,7 +64,7 @@ export class StatusMonitor extends DurableObject<Env> {
 
   override async alarm(): Promise<void> {
     // The next round is set first: a round that throws still has a successor.
-    // If even that fails (storage refused, as when a plan's limit is hit), it
+    // If even that fails (e.g. storage error or quota limit), it
     // is logged; the cron sets the alarm again once storage answers.
     try {
       await this.ctx.storage.setAlarm(Date.now() + INTERVAL_MS);
