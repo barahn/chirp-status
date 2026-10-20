@@ -119,4 +119,43 @@ export class Store {
         p50Ms: r.p50_ms,
       }));
   }
+
+  /** The tables keyed by server_id. A rename has to move every one of them, so
+   * they are named once here rather than spelled out at each statement. */
+  private static readonly KEYED = ["daily", "memory", "rolled"] as const;
+
+  /** Whether the server has any row at all under that id. */
+  has(id: string): boolean {
+    return Store.KEYED.some(
+      (t) => this.sql.exec<{ n: number }>(`SELECT 1 AS n FROM ${t} WHERE server_id = ? LIMIT 1`, id).length > 0,
+    );
+  }
+
+  /** Moves everything kept under `from` to `to`, so that a server renamed in
+   * Chirp's registry keeps the record it earned under its old id.
+   *
+   * It refuses when `to` already has rows. Two ids with a record are two
+   * servers as far as this store knows, and folding their days together would
+   * invent uptime neither was measured to have — the daily rows share a
+   * primary key, so one day would silently win over the other. A rename is
+   * the one case this is for: one record, a new name for it.
+   *
+   * Returns false when `from` has nothing, so renaming a server that was never
+   * probed is not an error.
+   *
+   * Every table moves in one transaction: a half-moved record would read as a
+   * server with closed days under one id and state under another. */
+  rename(from: string, to: string): boolean {
+    if (from === to) return false;
+    if (!this.has(from)) return false;
+    if (this.has(to)) {
+      throw new Error(`cannot rename ${JSON.stringify(from)} to ${JSON.stringify(to)}: ${JSON.stringify(to)} already has a record`);
+    }
+    this.sql.transaction(() => {
+      for (const t of Store.KEYED) {
+        this.sql.exec(`UPDATE ${t} SET server_id = ? WHERE server_id = ?`, to, from);
+      }
+    });
+    return true;
+  }
 }

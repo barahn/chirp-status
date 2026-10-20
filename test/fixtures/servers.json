@@ -1,7 +1,7 @@
 {
   "servers": [
     {
-      "id": "pve-dc-01",
+      "id": "bradador-vector",
       "kind": "node",
       "url": "https://relay.usechirp.app",
       "operator": "Fabrintek",

@@ -10,6 +10,7 @@
 import { expect, test } from "bun:test";
 import { Monitor } from "../src/monitor";
 import { parseServers } from "../src/registry";
+import { RENAMES } from "../src/renames";
 import { Store, dayOf, dayStart } from "../src/store";
 import { INTERVAL_MS } from "../src/uptime";
 import { countingSql } from "./sql";
@@ -70,8 +71,10 @@ test("a day of rounds stays inside the free plan's writes, with servers to spare
 
   // Storage is read three times per server, all of it on the very first
   // round: its state row, how far it is closed, and the days already closed.
+  // And the declared renames are checked once per object in memory, across
+  // each table keyed by id.
   const reads = f.statements.filter((q) => q.startsWith("SELECT"));
-  expect(reads).toHaveLength(3 * servers.length);
+  expect(reads).toHaveLength(3 * servers.length + 3 * RENAMES.length);
   // Every other statement writes exactly one row: the state row a round
   // upserts, a day's total, or how far the server is closed.
   const writes = f.statements.filter((q) => q.startsWith("INSERT"));

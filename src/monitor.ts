@@ -17,7 +17,9 @@
 // what is in memory, which the row carries, and the total is all that is kept
 // of it.
 
+import { nicknameForURL, type Nickname } from "./folklore";
 import { probe, type ProbeDeps } from "./probe";
+import { RENAMES } from "./renames";
 import { isNew, listing, type Kind, type Listing, type Server } from "./registry";
 import { Store, dayOf, dayStart, dayString, type DayTotal } from "./store";
 import {
@@ -49,6 +51,9 @@ const asSamples = (latencies: number[] = []): Sample[] =>
 /** One server as /v1/servers reports it. */
 export interface ServerStatus {
   id: string;
+  /** A name from folklore, derived from the URL's host. Not unique and not a
+   * key: it is there to be spoken, while the id is what the API is keyed by. */
+  nickname?: Nickname;
   kind: Kind;
   url: string;
   operator: string;
@@ -128,6 +133,7 @@ function decode(state: string): Mem {
 
 export class Monitor {
   private readonly mem = new Map<string, Mem>();
+  private renamesApplied = false;
 
   constructor(
     private readonly store: Store,
@@ -183,6 +189,7 @@ export class Monitor {
   /** Probes every server once, all at the same time, records what it saw, and
    * closes the days that have ended. */
   async round(servers: Server[]): Promise<void> {
+    this.applyRenames();
     const at = this.deps.now();
     const results = await Promise.all(servers.map((s) => probe(s.url, this.deps)));
     const today = dayOf(at);
@@ -195,6 +202,42 @@ export class Monitor {
       if (m.rolledThrough < today - 1) this.closeDays(srv.id, m, today);
       this.store.saveState(srv.id, encode(m));
     });
+  }
+
+  /** Moves the record of every server that was renamed, once per object in
+   * memory rather than once per round: a round that read five rows per
+   * declared rename would spend the reads a day allows on lines that have
+   * nothing left to move. An object Cloudflare brings back does it again,
+   * which is how a rename declared while the object was away is applied.
+   *
+   * A rename that refuses is logged and the others still run: one bad line
+   * must not stop the rounds, and the server keeps its record under the old
+   * id until the line is fixed. */
+  private applyRenames(): void {
+    if (this.renamesApplied) return;
+    this.renamesApplied = true;
+    for (const r of RENAMES) {
+      try {
+        if (this.rename(r.from, r.to)) {
+          console.log(`chirp-status: moved the record of ${r.from} to ${r.to}`);
+        }
+      } catch (e) {
+        console.error(`chirp-status: rename ${r.from} -> ${r.to}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  /** Moves one server's record, in storage and in memory, to a new id.
+   * Returns whether there was anything to move. */
+  rename(from: string, to: string): boolean {
+    const moved = this.store.rename(from, to);
+    // Memory is dropped either way, not moved: a Mem holds nothing keyed by
+    // id, but the entry under the old id must not answer for a server that
+    // no longer has that id, and the entry under the new id has to be built
+    // from the rows that have just arrived.
+    this.mem.delete(from);
+    this.mem.delete(to);
+    return moved;
   }
 
   /** Totals the days that have ended from what is in memory, keeps those
@@ -236,6 +279,7 @@ export class Monitor {
         const last = m.recent.at(-1);
         const recent = m.recent.filter((r) => r.at >= now - STALE_AFTER_MS - OFFLINE_AFTER * INTERVAL_MS);
         const days = this.history(s.id, today, MAX_HISTORY_DAYS, now - (now % 60_000));
+        const nickname = nicknameForURL(s.url);
         let u30: Uptime = { up: 0, observed: 0 };
         let u90: Uptime = { up: 0, observed: 0 };
         days.forEach((d, i) => {
@@ -244,6 +288,7 @@ export class Monitor {
         });
         return {
           id: s.id,
+          ...(nickname ? { nickname } : {}),
           kind: s.kind,
           url: s.url,
           operator: s.operator,
