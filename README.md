@@ -44,10 +44,11 @@ the vantage point.
 
 ## Renaming a server
 
-A server's record is keyed by its id, in all five of the Durable Object's
-tables. So a server that changes its id in Chirp's registry would otherwise
-read as the old one vanishing and a new one appearing with no history: the
-registry says what a server is called now, never what it was called before.
+A server's record is keyed by its id, in all three of the Durable Object's
+tables (`daily`, `memory`, `rolled`). So a server that changes its id in Chirp's
+registry would otherwise read as the old one vanishing and a new one appearing
+with no history: the registry says what a server is called now, never what it
+was called before.
 
 A rename is therefore declared here, in [`src/renames.ts`](src/renames.ts), by
 a pull request, and the monitor moves the record on its next round. Declare it
@@ -56,9 +57,12 @@ list, so that no round runs with the new id and no record under it.
 
 Moving a record into an id that already has one is refused, not merged: two ids
 with a record are two servers, and folding their days together would invent
-uptime neither was measured to have. A declared rename stays after it has been
-applied — applying it again does nothing — and may be deleted only once no
-storage still holds the old id.
+uptime neither was measured to have. However, if the server was probed under its
+old id during the deployment window before Chirp's registry caught up, the
+monitor merges those interim probes into the new id and drops the old one,
+keeping the record contiguous. A declared rename stays after it has been applied
+— applying it again does nothing — and may be deleted only once no storage still
+holds the old id.
 
 The definitions, and why the network is shaped as it is, are in Chirp's
 [`docs/status-page-proposal.md`](https://github.com/barahn/chirp/blob/main/docs/status-page-proposal.md).

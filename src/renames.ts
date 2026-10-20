@@ -16,6 +16,10 @@
 // Durable Object that Cloudflare may replace at any time, so the line has to
 // survive long enough for every replacement to have seen it. Deleting one is
 // safe only once no storage anywhere still holds the old id.
+//
+// If `from` was probed again during the deployment window (before Chirp's
+// registry updated to `to`), both ids have rows: the monitor merges `from`'s
+// interim probes into `to` and drops `from`, keeping the record contiguous.
 
 /** The renames, newest last: `from` is the id the record is under, `to` is the
  * id the registry lists now. */
