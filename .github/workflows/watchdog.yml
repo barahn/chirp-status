@@ -7,8 +7,8 @@ name: Watchdog
 # can be started by hand from the Actions tab.
 #
 # The free plan's use is checked only when the repository has a read-only
-# analytics token: the secret CLOUDFLARE_ANALYTICS_TOKEN (Account Analytics:
-# Read, nothing else) and the variable CLOUDFLARE_ACCOUNT_ID. It is not the
+# analytics token: the secrets CLOUDFLARE_ANALYTICS_TOKEN (read-only) and
+# CLOUDFLARE_ACCOUNT_ID. It is not the
 # deploy token, which stays in the production environment.
 on:
   schedule:
@@ -47,5 +47,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bun scripts/watchdog/run.ts

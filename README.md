@@ -158,9 +158,8 @@ maintainer to approve it in the `production` environment, then runs
 The environment holds two secrets:
 
 - `CLOUDFLARE_ACCOUNT_ID`: the account that owns `usechirp.app`.
-- `CLOUDFLARE_API_TOKEN`: a token with **Account · Workers Scripts · Edit** on
-  that account, and **Zone · Workers Routes · Edit** and **Zone · DNS · Edit**
-  on `usechirp.app`, which the custom domain `status.usechirp.app` needs.
+- `CLOUDFLARE_API_TOKEN`: a token scoped to deploying this Worker and its
+  custom domain, and nothing else.
 
 Until both are set, the workflow says so and deploys nothing.
 
@@ -176,9 +175,9 @@ It also warns when the day's use of a Durable Objects free-plan limit (rows
 read, rows written, requests; reset at 00:00 UTC) passes 60 %, so it can be
 dealt with before storage is refused. That needs, in the repository settings:
 
-- the secret `CLOUDFLARE_ANALYTICS_TOKEN`: a token with only **Account ·
-  Account Analytics · Read** on the account, not the deploy token;
-- the variable `CLOUDFLARE_ACCOUNT_ID`.
+- the secret `CLOUDFLARE_ANALYTICS_TOKEN`: a read-only analytics token, not
+  the deploy token;
+- the secret `CLOUDFLARE_ACCOUNT_ID`.
 
 Without them, use is not checked and the run says so. If the query fails, the
 run shows a warning and the rest of the check goes on.
