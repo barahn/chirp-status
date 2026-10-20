@@ -42,6 +42,17 @@ describe("servePage", () => {
     expect(body).toContain(`src="/assets/status.js?v=2"`);
   });
 
+  test("security headers the site did not send are filled in, and the site's own kept", async () => {
+    const bare = async () => new Response("<p>x</p>", { headers: { "Content-Type": "text/html" } });
+    const r = await servePage(new Request("https://status.usechirp.app/"), "https://usechirp.app", "/status/", bare);
+    expect(r.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+    expect(r.headers.get("Strict-Transport-Security")).toContain("max-age=");
+    expect(r.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(r.headers.get("X-Frame-Options")).toBe("DENY");
+    const own = await servePage(new Request("https://status.usechirp.app/"), "https://usechirp.app/", "/status/", site);
+    expect(own.headers.get("Content-Security-Policy")).toBe("default-src 'none'");
+  });
+
   test("an asset, as it is, with its query", async () => {
     asked = [];
     const r = await servePage(new Request("https://status.usechirp.app/assets/status.js?v=2"), "https://usechirp.app", "/assets/status.js", site);
