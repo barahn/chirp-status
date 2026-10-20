@@ -196,4 +196,30 @@ describe("the declared renames", () => {
     expect(f.store.has("pve-dc-01")).toBe(false);
     expect(f.store.totals("bradador-vector", d0, d0 + 10)).toEqual(before);
   });
+
+  test("merges records and does not throw when both from and to have records", async () => {
+    const f = fixture();
+    await days(f, list("pve-dc-01"), 3);
+
+    // Initial rename moves pve-dc-01 -> bradador-vector
+    f.monitor.rename("pve-dc-01", "bradador-vector");
+    expect(f.store.has("bradador-vector")).toBe(true);
+    expect(f.store.has("pve-dc-01")).toBe(false);
+
+    // Simulate pve-dc-01 being probed again before registry updated
+    f.now += INTERVAL_MS;
+    await f.monitor.round(list("pve-dc-01"));
+    expect(f.store.has("pve-dc-01")).toBe(true);
+
+    // Next round by a fresh monitor over the storage: must merge without throwing
+    const fresh = new Monitor(f.store, "test", { now: () => f.now, fetch: async () => new Response("ok") });
+    await fresh.round(list("bradador-vector"));
+
+    expect(f.store.has("pve-dc-01")).toBe(false);
+    expect(f.store.has("bradador-vector")).toBe(true);
+    const s = fresh.status(list("bradador-vector")).servers[0]!;
+    expect(s.state).toBe("up");
+    expect(s.uptime["90d"].observed_minutes).toBeGreaterThan(0);
+  });
 });
+

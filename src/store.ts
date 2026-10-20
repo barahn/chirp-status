@@ -158,4 +158,34 @@ export class Store {
     });
     return true;
   }
+
+  /** Copies any closed days `from` had that `to` does not have, and moves
+   * how far `to` is closed to whichever was further. */
+  copyTotals(from: string, to: string): void {
+    this.sql.transaction(() => {
+      this.sql.exec(
+        `INSERT OR IGNORE INTO daily (server_id, day, up_minutes, observed_minutes, p50_ms)
+         SELECT ?, day, up_minutes, observed_minutes, p50_ms FROM daily WHERE server_id = ?`,
+        to, from,
+      );
+      const fromRolled = this.rolledThrough(from);
+      if (fromRolled !== undefined) {
+        this.sql.exec(
+          `INSERT INTO rolled (server_id, day) VALUES (?, ?)
+           ON CONFLICT (server_id) DO UPDATE SET day = max(day, excluded.day)`,
+          to, fromRolled,
+        );
+      }
+    });
+  }
+
+  /** Deletes every row for this id across all keyed tables. */
+  drop(id: string): void {
+    this.sql.transaction(() => {
+      for (const t of Store.KEYED) {
+        this.sql.exec(`DELETE FROM ${t} WHERE server_id = ?`, id);
+      }
+    });
+  }
 }
+
