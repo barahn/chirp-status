@@ -230,6 +230,12 @@ export class Monitor {
   /** Moves one server's record, in storage and in memory, to a new id.
    * Returns whether there was anything to move. */
   rename(from: string, to: string): boolean {
+    if (from === to) return false;
+    if (!this.store.has(from)) return false;
+    if (this.store.has(to)) {
+      this.merge(from, to);
+      return true;
+    }
     const moved = this.store.rename(from, to);
     // Memory is dropped either way, not moved: a Mem holds nothing keyed by
     // id, but the entry under the old id must not answer for a server that
@@ -238,6 +244,59 @@ export class Monitor {
     this.mem.delete(from);
     this.mem.delete(to);
     return moved;
+  }
+
+  /** Merges `from`'s record into `to` when both have one, and drops `from`.
+   * This handles the case where `from` was moved to `to`, but `from` was
+   * probed again before the registry updated. */
+  private merge(from: string, to: string): void {
+    this.store.copyTotals(from, to);
+    const fromState = this.store.loadState(from);
+    const toState = this.store.loadState(to);
+    if (fromState && !toState) {
+      this.store.saveState(to, fromState);
+    } else if (fromState && toState) {
+      try {
+        const fromMem = decode(fromState);
+        const toMem = decode(toState);
+        for (const [minute, vs] of fromMem.minutes) {
+          const targetVs = toMem.minutes.get(minute);
+          if (!targetVs) {
+            toMem.minutes.set(minute, vs);
+          } else {
+            for (const [v, c] of vs) {
+              const tc = targetVs.get(v);
+              if (!tc) targetVs.set(v, { ok: c.ok, failed: c.failed });
+              else {
+                tc.ok += c.ok;
+                tc.failed += c.failed;
+              }
+            }
+          }
+        }
+        for (const [day, lats] of fromMem.latencies) {
+          const targetLats = toMem.latencies.get(day);
+          if (!targetLats) toMem.latencies.set(day, [...lats]);
+          else targetLats.push(...lats);
+        }
+        toMem.recent = [...toMem.recent, ...fromMem.recent]
+          .sort((a, b) => a.at - b.at)
+          .slice(-RECENT);
+        if (fromMem.lastOK !== undefined) {
+          toMem.lastOK = Math.max(toMem.lastOK ?? 0, fromMem.lastOK);
+        }
+        for (const [day, t] of fromMem.closed) {
+          if (!toMem.closed.has(day)) toMem.closed.set(day, t);
+        }
+        toMem.rolledThrough = Math.max(toMem.rolledThrough, fromMem.rolledThrough);
+        this.store.saveState(to, encode(toMem));
+      } catch (e) {
+        console.error(`chirp-status: merging state ${from} -> ${to}: ${(e as Error).message}`);
+      }
+    }
+    this.store.drop(from);
+    this.mem.delete(from);
+    this.mem.delete(to);
   }
 
   /** Totals the days that have ended from what is in memory, keeps those
