@@ -4,13 +4,12 @@
 // Cloudflare may take a Durable Object out of memory at any time, and in
 // production it did, all but between every request: 16 million rows read for
 // 6,500 requests. Whatever the monitor keeps in memory has to be had back for
-// a few rows, never by re-reading the probes.
+// a few rows, never by working the figures out again from storage.
 
 import { expect, test } from "bun:test";
-import { Database } from "bun:sqlite";
 import { Monitor } from "../src/monitor";
 import { parseServers } from "../src/registry";
-import { PRUNE_SQL, Store, dayOf, dayStart } from "../src/store";
+import { Store, dayOf, dayStart } from "../src/store";
 import { INTERVAL_MS } from "../src/uptime";
 import { countingSql } from "./sql";
 
@@ -38,24 +37,12 @@ test("an object recreated before every round and every answer reads a handful of
     perAnswer.push(rows.n - before);
     now += INTERVAL_MS;
   }
-  // Closing a day reads that day's probes, once, on the day's first round;
-  // nothing else reads more than a few rows.
-  const start = dayStart(d0) + 20 * 3_600_000;
-  const heavy = perRound.map((n, i) => [i, n] as const).filter(([, n]) => n > 10);
-  const firstOfADay = (i: number) => dayOf(start + i * INTERVAL_MS) !== dayOf(start + (i - 1) * INTERVAL_MS);
-  expect(heavy.map(([i]) => i).every(firstOfADay)).toBe(true);
-  expect(heavy).toHaveLength(2); // the rounds cross two midnights
+  // No round reads more than a few rows, closing a day included: the day is
+  // totalled from the state row the object just read, not from its probes.
+  expect(Math.max(...perRound)).toBeLessThanOrEqual(10);
   expect(Math.max(...perAnswer)).toBeLessThanOrEqual(10);
   // And what it says is what an object that never left memory would say.
   const kept = new Monitor(store, "v", { now: () => now, fetch: async () => new Response("ok") });
   expect(fresh().status(servers)).toEqual(kept.status(servers));
   expect(fresh().historyStatus("n1", 3)).toEqual(kept.historyStatus("n1", 3));
 }, 60_000); // 3,600 rounds, each by an object made anew
-
-test("pruning old probes uses the index, not a scan of every probe", () => {
-  const db = new Database(":memory:");
-  new Store({ exec: (q, ...b) => db.query(q).all(...(b as never[])) as never[], transaction: (fn) => db.transaction(fn)() });
-  const plan = db.query(`EXPLAIN QUERY PLAN ${PRUNE_SQL}`).all("n1", 0).map((r) => (r as { detail: string }).detail).join(" ");
-  expect(plan).toContain("USING");
-  expect(plan).not.toMatch(/^SCAN probes$/);
-});
