@@ -37,9 +37,15 @@ function fixture(start = t0) {
   return f;
 }
 
-/** Records one probe every interval from from up to to, as up or down. */
-function fill(store: Store, from: number, to: number, ok: boolean) {
-  for (let at = from; at < to; at += INTERVAL_MS) store.add("n1", { vantage: "test", at, ok, latencyMs: 20, err: ok ? "" : "status" });
+/** Probes every interval from from up to to, as up or down. Single probes are
+ * not kept, so a past day is made the way it is really made: by rounds. */
+async function fill(f: ReturnType<typeof fixture>, from: number, to: number, ok: boolean) {
+  f.now = from;
+  f.healthy = ok;
+  while (f.now < to) {
+    await f.monitor.round(servers);
+    f.now += INTERVAL_MS;
+  }
 }
 
 test("off-line after three failed rounds, and since when", async () => {
@@ -66,17 +72,18 @@ test("off-line after three failed rounds, and since when", async () => {
   expect(f.monitor.status(servers).servers[0]!.state).toBe("unknown");
 });
 
-test("days are totalled, gaps stay gaps, and old probes go after their total", async () => {
+test("days are totalled, gaps stay gaps, and only the total is kept", async () => {
   const today = dayOf(t0);
-  const f = fixture();
-  fill(f.store, dayStart(today - 100), dayStart(today - 99), true); // past retention
-  fill(f.store, dayStart(today - 3), dayStart(today - 2), true); // a full day up
+  const f = fixture(dayStart(today - 3));
+  await fill(f, dayStart(today - 3), dayStart(today - 2), true); // a full day up
   // today-2: the monitor was down all day. No probes, no data.
   const half = dayStart(today - 1) + 12 * HOUR;
-  fill(f.store, dayStart(today - 1), half, true); // up for twelve hours
-  fill(f.store, half, dayStart(today), false); // then down for twelve
-  fill(f.store, dayStart(today), t0, true); // up since midnight
+  await fill(f, dayStart(today - 1), half, true); // up for twelve hours
+  await fill(f, half, dayStart(today), false); // then down for twelve
+  await fill(f, dayStart(today), t0, true); // up since midnight
 
+  f.now = t0;
+  f.healthy = true;
   const s = await f.round();
   f.now -= INTERVAL_MS;
 
@@ -93,14 +100,18 @@ test("days are totalled, gaps stay gaps, and old probes go after their total", a
   expect(s.uptime["30d"]).toMatchObject({ up_minutes: 1440 + 720 + 720, observed_minutes: 1440 + 1440 + 720 });
   // The last 24 hours: 12 h down, then 12 h up.
   expect(s.uptime["24h"]).toMatchObject({ up_minutes: 720, observed_minutes: 1440 });
-
-  // The day past retention was totalled before its probes went.
-  expect(f.store.samples("n1", dayStart(today - 100), dayStart(today - 99))).toHaveLength(0);
-  const totals = f.store.totals("n1", today - 100, today - 100);
-  expect(totals).toHaveLength(1);
-  expect(totals[0]!.uptime.observed).toBe(1440);
   expect(s.uptime["90d"].observed_minutes).toBe(s.uptime["30d"].observed_minutes);
-});
+
+  // A day that ended is in storage as its total, and that is all of it.
+  const totals = f.store.totals("n1", today - 3, today - 1);
+  expect(totals.map((t) => [t.day, t.uptime.up, t.uptime.observed])).toEqual([
+    [today - 3, 1440, 1440],
+    [today - 1, 720, 1440],
+  ]);
+  // What it says is what an object that never left memory would say.
+  const restarted = new Monitor(f.store, "test", { now: () => f.now, fetch: async () => new Response("") });
+  expect(restarted.historyStatus("n1", 4)).toEqual(days);
+}, 60_000); // four days of rounds
 
 describe("history", () => {
   test("holds its own bound on the days it allocates for", () => {

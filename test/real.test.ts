@@ -11,6 +11,7 @@ import { expect, test } from "bun:test";
 import { Monitor } from "../src/monitor";
 import { parseServers } from "../src/registry";
 import { Store, dayOf, dayStart } from "../src/store";
+import { INTERVAL_MS } from "../src/uptime";
 import { realBindingSql } from "./sql";
 
 const servers = parseServers({
@@ -20,16 +21,19 @@ const servers = parseServers({
 test("days close when numbers are bound as REAL, as a Durable Object binds them", async () => {
   const store = new Store(realBindingSql());
   const d16 = dayOf(Date.UTC(2026, 9, 16));
-  const fill = (from: number, to: number) => {
-    for (let at = from; at < to; at += 30_000) store.add("n1", { vantage: "v", at, ok: true, latencyMs: 20, err: "" });
-  };
-  fill(dayStart(d16) + 14 * 3_600_000, dayStart(d16 + 1));
-  fill(dayStart(d16 + 1), dayStart(d16 + 1) + 13 * 3_600_000);
-
-  let now = dayStart(d16 + 2) + 2 * 3_600_000;
+  let now = dayStart(d16) + 14 * 3_600_000;
   const m = new Monitor(store, "v", { now: () => now, fetch: async () => new Response("ok") });
+  const fill = async (to: number) => {
+    while (now < to) {
+      await m.round(servers);
+      now += INTERVAL_MS;
+    }
+  };
+  await fill(dayStart(d16 + 1) + 13 * 3_600_000); // from 14:00 on the 16th to 13:00 on the 17th
+
+  now = dayStart(d16 + 2) + 2 * 3_600_000;
   await m.round(servers); // the first round of the day closes the days before it
-  now += 30_000;
+  now += INTERVAL_MS;
   await m.round(servers);
 
   const days = m.historyStatus("n1", 3).map((d) => [d.up_minutes, d.observed_minutes]);

@@ -6,16 +6,20 @@
 // worker.ts is a thin layer over this, so the tests can drive all of it with
 // a fake clock and a fake fetch.
 //
-// What the figures need is kept in memory, and saved with every probe as one
-// row per server: a Durable Object on Cloudflare's free plan may read five
-// million rows a day, and Cloudflare takes an object out of memory when it
-// likes, in production all but between every request. So an object that comes
-// back reads one row per server, and the probes are read only to close a day,
-// once, or to start from nothing.
+// What the figures need is kept in memory and saved as one row per server,
+// written once a round: a Durable Object on Cloudflare's free plan may read
+// five million rows a day but write only a hundred thousand, and Cloudflare
+// takes an object out of memory when it likes, in production all but between
+// every request. So an object that comes back reads one row per server, and
+// single probes are not kept at all -- a row per probe, with its index, cost
+// three writes a round, and a day of them had to be deleted once retention
+// was reached, which is another write each. A day that ends is totalled from
+// what is in memory, which the row carries, and the total is all that is kept
+// of it.
 
 import { probe, type ProbeDeps } from "./probe";
 import { isNew, listing, type Kind, type Listing, type Server } from "./registry";
-import { RETENTION_MS, Store, dayOf, dayStart, dayString, type DayTotal } from "./store";
+import { Store, dayOf, dayStart, dayString, type DayTotal } from "./store";
 import {
   INTERVAL_MS, OFFLINE_AFTER, STALE_AFTER_MS, add, medianLatency, minuteOf, percent, record,
   tallyMinutes, verdict, type MinuteCounts, type Sample, type State, type Uptime,
@@ -36,6 +40,11 @@ export interface Window {
 
 const window = (u: Uptime): Window => ({ up_minutes: u.up, observed_minutes: u.observed, percent: percent(u) });
 const iso = (ms: number): string => new Date(ms).toISOString();
+
+/** Latencies as samples, for medianLatency, which takes the probes a figure
+ * is made of. A day's latencies are kept as numbers alone. */
+const asSamples = (latencies: number[] = []): Sample[] =>
+  latencies.map((latencyMs) => ({ vantage: "", at: 0, ok: true, latencyMs, err: "" }));
 
 /** One server as /v1/servers reports it. */
 export interface ServerStatus {
@@ -135,12 +144,11 @@ export class Monitor {
     if (saved !== undefined) {
       m = decode(saved);
     } else {
-      const now = this.deps.now();
-      const today = dayOf(now);
+      // The first time ever, or after the row is lost: there is nothing to
+      // work the day in course out from, so it starts empty, with the days
+      // already closed.
+      const today = dayOf(this.deps.now());
       m = { minutes: new Map(), latencies: new Map(), recent: [], closed: new Map(), rolledThrough: this.store.rolledThrough(id) ?? -1 };
-      for (const s of this.store.samples(id, dayStart(today - 1), now + 1)) this.remember(m, s);
-      m.lastOK = Math.max(m.lastOK ?? -Infinity, this.store.lastOK(id) ?? -Infinity);
-      if (!Number.isFinite(m.lastOK)) m.lastOK = undefined;
       for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
       this.store.saveState(id, encode(m));
     }
@@ -161,8 +169,8 @@ export class Monitor {
     if (m.recent.length > RECENT) m.recent.splice(0, m.recent.length - RECENT);
   }
 
-  /** Probes every server once, all at the same time, records what it saw,
-   * closes the days that have ended, and drops probes past retention. */
+  /** Probes every server once, all at the same time, records what it saw, and
+   * closes the days that have ended. */
   async round(servers: Server[]): Promise<void> {
     const at = this.deps.now();
     const results = await Promise.all(servers.map((s) => probe(s.url, this.deps)));
@@ -173,18 +181,25 @@ export class Monitor {
       this.remember(m, s);
       // Once a day, the days before today are closed; whether they are is
       // in the saved state, so an object back in memory does not do it again.
-      if (m.rolledThrough < today - 1) this.closeDays(srv.id, m, today, at);
-      this.store.addWithState(srv.id, s, encode(m));
+      if (m.rolledThrough < today - 1) this.closeDays(srv.id, m, today);
+      this.store.saveState(srv.id, encode(m));
     });
   }
 
-  /** Totals the days before today in storage, takes their totals into
-   * memory, drops probes past retention, and forgets what memory no longer
-   * needs. */
-  private closeDays(id: string, m: Mem, today: number, at: number): void {
-    this.store.rollup(id, today);
-    for (const t of this.store.totals(id, today - MAX_HISTORY_DAYS, today - 1)) m.closed.set(t.day, t);
-    this.store.prune(id, at - RETENTION_MS);
+  /** Totals the days that have ended from what is in memory, keeps those
+   * totals, and forgets what memory no longer needs. A day nobody probed gets
+   * no total: in the record it stays a day without data. Only the last
+   * MAX_HISTORY_DAYS are considered, since no older day is served and memory
+   * never reaches that far back anyway. */
+  private closeDays(id: string, m: Mem, today: number): void {
+    const totals: DayTotal[] = [];
+    for (let d = Math.max(m.rolledThrough + 1, today - MAX_HISTORY_DAYS); d < today; d++) {
+      const uptime = tallyMinutes(m.minutes, minuteOf(dayStart(d)), minuteOf(dayStart(d + 1)));
+      if (uptime.observed === 0) continue;
+      totals.push({ day: d, uptime, p50Ms: medianLatency(asSamples(m.latencies.get(d))) });
+    }
+    this.store.closeDays(id, totals, today - 1);
+    for (const t of totals) m.closed.set(t.day, t);
     m.rolledThrough = today - 1;
     for (const d of m.closed.keys()) if (d < today - MAX_HISTORY_DAYS) m.closed.delete(d);
     const keepFrom = minuteOf(dayStart(today - 1));
@@ -254,7 +269,7 @@ export class Monitor {
     const todays: DayTotal = {
       day: today,
       uptime: tallyMinutes(m.minutes, minuteOf(dayStart(today)), minuteOf(until)),
-      p50Ms: medianLatency((m.latencies.get(today) ?? []).map((latencyMs) => ({ vantage: "", at: 0, ok: true, latencyMs, err: "" }))),
+      p50Ms: medianLatency(asSamples(m.latencies.get(today))),
     };
     const out: DayTotal[] = [];
     for (let d = from; d <= today; d++) {

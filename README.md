@@ -7,9 +7,13 @@ is up now, since when it has been off-line, and how much of each day it
 answered.
 
 It is a Cloudflare Worker and one Durable Object. The Durable Object probes
-every server each 30 seconds, keeps the probes in its SQLite storage for 90 days
-and each day's totals for good, and the Worker serves them at
-`https://status.usechirp.app`.
+every server each 30 seconds, keeps what the figures need in its SQLite storage
+as one row per server, totals each day once it ends and keeps those totals for
+good, and the Worker serves them at `https://status.usechirp.app`. Single probes
+are not kept: a row per probe cost three of the free plan's hundred thousand
+daily writes every round, and a day of them had to be deleted once the 90 days
+of retention were up. The day in course lives in the server's row, and the days
+before it in their totals.
 
 The page itself is Chirp's, written and published with the rest of
 `usechirp.app`. The Worker fetches it from `SITE_ORIGIN` at run time and serves
