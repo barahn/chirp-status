@@ -68,10 +68,11 @@ test("a day of rounds stays inside the free plan's writes, with servers to spare
   }
   await f.monitor.round(servers);
 
-  // Storage is read three times per server, all of it on the very first
-  // round: its state row, how far it is closed, and the days already closed.
+  // Storage is read four times per server, all of it on the very first round:
+  // its state row, how far it is closed, when it last answered, and the days
+  // already closed.
   const reads = f.statements.filter((q) => q.startsWith("SELECT"));
-  expect(reads).toHaveLength(3 * servers.length);
+  expect(reads).toHaveLength(4 * servers.length);
   // Every other statement writes exactly one row: the state row a round
   // upserts, a day's total, or how far the server is closed.
   const writes = f.statements.filter((q) => q.startsWith("INSERT"));
