@@ -7,15 +7,11 @@
 // a fake clock and a fake fetch.
 //
 // What the figures need is kept in memory and saved as one row per server,
-// written once a round: a Durable Object on Cloudflare's free plan may read
-// five million rows a day but write only a hundred thousand, and Cloudflare
-// takes an object out of memory when it likes, in production all but between
-// every request. So an object that comes back reads one row per server, and
-// single probes are not kept at all -- a row per probe, with its index, cost
-// three writes a round, and a day of them had to be deleted once retention
-// was reached, which is another write each. A day that ends is totalled from
-// what is in memory, which the row carries, and the total is all that is kept
-// of it.
+// written once a round. An object restored into memory reads one row per
+// server, and single probes are aggregated in memory into minute and daily
+// totals rather than stored individually, minimizing database operations.
+// A day that ends is totalled from what is in memory, and the daily total
+// is what is persisted long-term.
 
 import { nicknameForURL, type Nickname } from "./folklore";
 import { probe, type ProbeDeps } from "./probe";

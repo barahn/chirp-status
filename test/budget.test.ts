@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Fabrintek Engenharia Digital Ltda
 
-// A Durable Object on Cloudflare's free plan may read five million rows a day
-// and write a hundred thousand. Working out the figures from storage on every
+// A Durable Object may have daily limits on row reads and writes. Working out the figures from storage on every
 // request spent the reads in a day, and a row per probe spent the writes.
 // These hold the monitor to what it may spend: storage is read to start and
 // once a day, never to answer, and a round writes one row per server.
@@ -16,8 +15,8 @@ import { INTERVAL_MS } from "../src/uptime";
 import { countingSql } from "./sql";
 
 const t0 = Date.UTC(2026, 9, 15, 12, 0, 0);
-/** What the free plan allows one Durable Object to write in a day. */
-const FREE_WRITES_A_DAY = 100_000;
+/** Daily write budget for one Durable Object. */
+const DAILY_WRITES_BUDGET = 100_000;
 const ROUNDS_A_DAY = (24 * 60 * 60 * 1000) / INTERVAL_MS;
 const servers = parseServers({
   servers: ["a", "b", "c"].map((id) => ({
@@ -57,7 +56,7 @@ test("a round writes one row per server and reads nothing", async () => {
   expect(f.statements).toEqual(Array(servers.length).fill("INSERT INTO memory"));
 });
 
-test("a day of rounds stays inside the free plan's writes, with servers to spare", async () => {
+test("a day of rounds stays inside the write budget, with servers to spare", async () => {
   const f = fixture(dayStart(dayOf(t0)));
   // A whole day of rounds, from midnight to midnight, closing the day before
   // on the first round and the day itself on the last.
@@ -84,8 +83,8 @@ test("a day of rounds stays inside the free plan's writes, with servers to spare
   // the server is closed.
   const perServer = writes.length / servers.length;
   expect(perServer).toBeLessThanOrEqual(ROUNDS_A_DAY + 8);
-  // What the free plan affords, at this cost: enough servers to grow into.
-  expect(Math.floor(FREE_WRITES_A_DAY / perServer)).toBeGreaterThanOrEqual(30);
+  // What the write budget affords, at this cost: enough servers to grow into.
+  expect(Math.floor(DAILY_WRITES_BUDGET / perServer)).toBeGreaterThanOrEqual(30);
   // And the figures are still right after a day of it.
   expect(f.monitor.status(servers).servers[0]!.uptime["24h"].percent).toBe(100);
 }, 120_000); // a day of rounds for every server

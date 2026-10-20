@@ -1,15 +1,6 @@
 name: Watchdog
 
-# Checks status.usechirp.app from outside Cloudflare every five minutes and
-# reports anything wrong on one issue, labelled watchdog, closed again once
-# all is well (scripts/watchdog/). GitHub runs schedules late at busy times,
-# and turns them off in a repository without activity for 60 days; the run
-# can be started by hand from the Actions tab.
-#
-# The free plan's use is checked only when the repository has a read-only
-# analytics token: the secrets CLOUDFLARE_ANALYTICS_TOKEN (read-only) and
-# CLOUDFLARE_ACCOUNT_ID. It is not the
-# deploy token, which stays in the production environment.
+# Health check monitor for status.usechirp.app (scripts/watchdog/).
 on:
   schedule:
     - cron: "*/5 * * * *"
