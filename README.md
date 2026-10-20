@@ -125,6 +125,25 @@ The environment holds two secrets:
 
 Until both are set, the workflow says so and deploys nothing.
 
+## Watching it
+
+`.github/workflows/watchdog.yml` checks the monitor from outside Cloudflare
+every five minutes (`scripts/watchdog/`). It reports on one issue, labelled
+`watchdog`, when `/v1/servers` does not answer 200 or its newest probe is more
+than 3 minutes old, comments only when what is wrong changes, and closes the
+issue once all is well.
+
+It also warns when the day's use of a Durable Objects free-plan limit (rows
+read, rows written, requests; reset at 00:00 UTC) passes 60 %, so it can be
+dealt with before storage is refused. That needs, in the repository settings:
+
+- the secret `CLOUDFLARE_ANALYTICS_TOKEN`: a token with only **Account ·
+  Account Analytics · Read** on the account, not the deploy token;
+- the variable `CLOUDFLARE_ACCOUNT_ID`.
+
+Without them, use is not checked and the run says so. If the query fails, the
+run shows a warning and the rest of the check goes on.
+
 ## Licence
 
 AGPL-3.0-only. Copyright (C) 2026 Fabrintek Engenharia Digital Ltda. See
