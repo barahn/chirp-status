@@ -73,6 +73,15 @@ linear and every commit keeps its sign-off. A merge to `main` is deployed to
 `status.usechirp.app` after a maintainer approves it in the `production`
 environment.
 
+A pull request can also be held deliberately. The `hold: design` label fails
+the required `Design hold` check, so the pull request cannot be merged while it
+is there, whatever else is green. It is for changes that wait on a decision
+rather than on review -- the relay network's operating architecture is the
+standing example: it is designed, demonstrated, tested and approved before any
+of it reaches a release. The maintainer puts the label on and takes it off, and
+the check re-runs by itself when the label changes; no push is needed to clear
+it.
+
 ## Versions
 
 The Worker is deployed from `main`, not from releases, so it has no version
