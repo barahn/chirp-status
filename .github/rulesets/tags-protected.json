@@ -6,15 +6,12 @@
     "ref_name": {
       "exclude": [],
       "include": [
-        "~ALL"
+        "refs/tags/v*"
       ]
     }
   },
   "bypass_actors": [],
   "rules": [
-    {
-      "type": "creation"
-    },
     {
       "type": "update"
     },
