@@ -68,8 +68,18 @@ drawn from a sign-off.
 ## Branching model
 
 Trunk-based, as Chirp. `main` is the default branch, takes changes only by pull
-request with its required checks, and is merged by rebase, so history stays
-linear and every commit keeps its sign-off. A merge to `main` is deployed to
+request with its required checks, and is merged with a **merge commit**, which
+GitHub creates and signs. Every commit on `main` is signed — the ruleset
+requires it — and every commit keeps its own `Signed-off-by`, because a merge
+preserves the commits underneath instead of rewriting them. Squash and rebase
+are both off, at the repository level and in the ruleset.
+
+The two cannot be combined: GitHub rewrites each commit of a rebase merge and
+has no key of the author's, so under rebase every commit lands unsigned, which
+is exactly what `required_signatures` refuses. Signed history was chosen over
+linear history on 2026-10-29; the merge bubbles are the price. Squash stays off
+for its own reason — GitHub's squash commit drops the individual DCO
+attestations. A merge to `main` is deployed to
 `status.usechirp.app` after a maintainer approves it in the `production`
 environment.
 
