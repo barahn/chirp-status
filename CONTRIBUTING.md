@@ -106,6 +106,25 @@ pass under Bun, that the Worker builds, and that the project has no runtime
 dependency and only permissively licensed development tools. CodeQL, dependency
 review and gitleaks run on every pull request.
 
+`main` and the release tags are protected by rulesets on GitHub, applied by the
+maintainer and versioned here as `.github/rulesets/main-protected.json` and
+`tags-protected.json`. Those files are the reference: **anything configured on
+GitHub and not in them is drift.** They are generated from the live rulesets
+rather than written by hand, so that they can be compared field for field —
+re-generate instead of editing:
+
+```
+gh api repos/barahn/chirp-status/rulesets/25246725   # main
+gh api repos/barahn/chirp-status/rulesets/25507486   # tags
+```
+
+keeping `name`, `target`, `enforcement`, `conditions`, `bypass_actors` and
+`rules`, and dropping the server's own `id`, `source` and timestamps. To apply a
+change the other way: `gh api -X PUT repos/barahn/chirp-status/rulesets/<id>
+--input <file>`. Never `PUT` a file that was hand-edited from a partial copy: a
+field the file omits is sent as its default, which silently turns protection
+off.
+
 ## Tools
 
 Bun, not Node.js: `bun install`, `bun test`, `bun run typecheck`,
