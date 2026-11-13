@@ -135,6 +135,19 @@ change the other way: `gh api -X PUT repos/barahn/chirp-status/rulesets/<id>
 field the file omits is sent as its default, which silently turns protection
 off.
 
+## What is published
+
+chirp-status publishes, on purpose, what it measures from outside about the
+servers of Chirp's public network: whether each one answers, and how fast. That
+is the service. Its source and its releases are public too.
+
+Tests of Chirp itself are not published here or anywhere else public.
+End-to-end runs, measurements of real networks, and the machines, addresses,
+providers and logs a test used stay private. A public issue carries what is
+needed to reproduce the problem, and leaves out IP addresses other than those
+of the public network's servers, the names of internet providers, hostnames
+and network captures.
+
 ## Tools
 
 Bun, not Node.js: `bun install`, `bun test`, `bun run typecheck`,
