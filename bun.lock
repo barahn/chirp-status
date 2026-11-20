@@ -5,14 +5,14 @@
     "": {
       "name": "chirp-status",
       "devDependencies": {
-        "@cloudflare/workers-types": "5.20261110.1",
+        "@cloudflare/workers-types": "5.20261117.1",
         "@types/bun": "1.4.4",
         "typescript": "7.0.2",
       },
     },
   },
   "packages": {
-    "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261110.1", "", {}, "sha512-XOr3TDQ2sNDiP9zoZtdwYVhuLZ3aFY+G+G4iSeNO9p/HDSveZJpyCbUtmpEElaClLBe9hIzfN26qd0i/S7ksPg=="],
+    "@cloudflare/workers-types": ["@cloudflare/workers-types@5.20261117.1", "", {}, "sha512-0Qg3kAn8DPRQLaT8ZkqCm6+2/ctc61zdWZqN/1JtlrXV+Db1fNwnjHBLz+/GB/yX+/JgdDAFs+fr8vYyC0w9aw=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
